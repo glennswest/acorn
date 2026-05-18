@@ -19,20 +19,45 @@ license = "MIT"
 authors = ["Glenn West"]
 
 [workspace.dependencies]
-acorn-proto = { path = "crates/acorn-proto" }
+# Internal crates
+acorn-proto     = { path = "crates/acorn-proto" }
+acorn-store     = { path = "crates/acorn-store" }
+acorn-witness   = { path = "crates/acorn-witness" }
+acorn-sensors   = { path = "crates/acorn-sensors" }
+acorn-cognitive = { path = "crates/acorn-cognitive" }
+acorn-api       = { path = "crates/acorn-api" }
+acorn-mcp       = { path = "crates/acorn-mcp" }
+acorn-client    = { path = "crates/acorn-client" }
+
+# Serialization
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Async runtime / HTTP
 tokio      = { version = "1", features = ["full"] }
-# --- staged for later phases; uncomment per crate as you implement ---
-# axum          = "0.7"
-# tower-http    = "0.6"
-# rustls        = "0.23"
-# sha2          = "0.10"
-# blake3        = "1"
-# ed25519-dalek = "2"
-# rand          = "0.8"
-# nalgebra      = "0.33"
-# petgraph      = "0.6"
-# rppal         = "0.19"
-# bme280        = "0.5"
-# ads1x1x       = "0.3"
+axum       = "0.7"
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+reqwest    = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Crypto / hashing
+sha2          = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand          = "0.8"
+hex           = "0.4"
+
+# Errors / logging / utility
+thiserror          = "1"
+anyhow             = "1"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+parking_lot        = "0.12"
+clap               = { version = "4", features = ["derive", "env"] }
+bytes              = "1"
+
+# Graph algorithms (P3 cognitive)
+petgraph = "0.6"
+
+# Pi hardware drivers (P2; gated behind `pi-hw` feature in acorn-sensors)
+rppal   = "0.19"
+bme280  = "0.5"
+ads1x1x = "0.3"

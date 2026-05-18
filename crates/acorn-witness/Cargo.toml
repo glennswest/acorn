@@ -6,4 +6,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-acorn-proto = { workspace = true }
+acorn-proto    = { workspace = true }
+sha2           = { workspace = true }
+ed25519-dalek  = { workspace = true }
+rand           = { workspace = true }
+hex            = { workspace = true }
+thiserror      = { workspace = true }
+parking_lot    = { workspace = true }
