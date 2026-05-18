@@ -297,13 +297,12 @@ mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let mut p = std::env::temp_dir();
         let pid = std::process::id();
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        p.push(format!("acorn-witness-test-{pid}-{nanos}-{name}"));
+        p.push(format!("acorn-witness-test-{pid}-{n}-{name}"));
         p
     }
 

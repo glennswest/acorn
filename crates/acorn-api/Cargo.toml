@@ -6,4 +6,22 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-acorn-proto = { workspace = true }
+acorn-proto   = { workspace = true }
+acorn-store   = { workspace = true }
+acorn-witness = { workspace = true }
+
+axum          = { workspace = true }
+tower-http    = { workspace = true }
+tokio         = { workspace = true }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+
+sha2          = { workspace = true }
+hex           = { workspace = true }
+rand          = { workspace = true }
+parking_lot   = { workspace = true }
+thiserror     = { workspace = true }
+tracing       = { workspace = true }
+
+[dev-dependencies]
+tower         = { version = "0.5", features = ["util"] }
