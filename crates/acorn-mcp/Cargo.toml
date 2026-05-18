@@ -1,0 +1,9 @@
+[package]
+name = "acorn-mcp"
+description = "MCP proxy: 114 tools over JSON-RPC 2.0, thin wrappers over acorn-api handlers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+acorn-proto = { workspace = true }

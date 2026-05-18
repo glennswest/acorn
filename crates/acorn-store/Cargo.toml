@@ -1,0 +1,9 @@
+[package]
+name = "acorn-store"
+description = "RVF append-only vector store + brute-force kNN + kNN graph."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+acorn-proto = { workspace = true }

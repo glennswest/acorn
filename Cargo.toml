@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/acorn-proto",
+    "crates/acorn-client",
+    "crates/acorn-store",
+    "crates/acorn-witness",
+    "crates/acorn-sensors",
+    "crates/acorn-cognitive",
+    "crates/acorn-api",
+    "crates/acorn-mcp",
+    "crates/acornd",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Glenn West"]
+
+[workspace.dependencies]
+acorn-proto = { path = "crates/acorn-proto" }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio      = { version = "1", features = ["full"] }
+# --- staged for later phases; uncomment per crate as you implement ---
+# axum          = "0.7"
+# tower-http    = "0.6"
+# rustls        = "0.23"
+# sha2          = "0.10"
+# blake3        = "1"
+# ed25519-dalek = "2"
+# rand          = "0.8"
+# nalgebra      = "0.33"
+# petgraph      = "0.6"
+# rppal         = "0.19"
+# bme280        = "0.5"
+# ads1x1x       = "0.3"

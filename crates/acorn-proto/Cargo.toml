@@ -1,0 +1,9 @@
+[package]
+name = "acorn-proto"
+description = "Wire types, RVF format, HTTP DTOs and sensing-event vocabulary for the Cognitum Seed protocol. The integration boundary: dependency-light, safe to import into Z Man."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }

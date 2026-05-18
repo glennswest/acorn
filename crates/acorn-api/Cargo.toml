@@ -1,0 +1,9 @@
+[package]
+name = "acorn-api"
+description = "Axum HTTPS server: the 98-endpoint RuView-facing surface + bearer auth + TLS."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+acorn-proto = { workspace = true }

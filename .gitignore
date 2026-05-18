@@ -1,0 +1,15 @@
+/target
+Cargo.lock
+
+# Secrets and environment
+.env
+.env.*
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

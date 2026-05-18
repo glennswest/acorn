@@ -1,0 +1,9 @@
+[package]
+name = "acorn-sensors"
+description = "Raspberry Pi GPIO/I2C sensor drivers (reed, PIR, vibration, ADS1115, BME280)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+acorn-proto = { workspace = true }

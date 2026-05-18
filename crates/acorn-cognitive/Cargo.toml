@@ -1,0 +1,9 @@
+[package]
+name = "acorn-cognitive"
+description = "Cognitive container: Stoer-Wagner min-cut fragility + temporal coherence."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+acorn-proto = { workspace = true }

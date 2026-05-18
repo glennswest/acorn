@@ -1,0 +1,9 @@
+[package]
+name = "acorn-client"
+description = "Async client for the Seed HTTP/MCP/push API. Z Man imports THIS (+ acorn-proto)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+acorn-proto = { workspace = true }
