@@ -18,6 +18,10 @@ use crate::error::ProtoError;
 pub const RVF_MAGIC: [u8; 4] = *b"RVF1";
 /// Vector dimensionality for the CSI feature store.
 pub const RVF_DIM: u16 = 8;
+/// On-disk size of [`RvfHeader`]. 18 bytes of data + 14 bytes reserved = 32.
+pub const RVF_HEADER_LEN: usize = 32;
+/// Current header version emitted by this implementation.
+pub const RVF_VERSION: u16 = 1;
 
 /// Distance metric tag stored in the RVF header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +31,22 @@ pub enum Metric {
     Dot = 2,
 }
 
+impl Metric {
+    pub fn from_u8(v: u8) -> Result<Self, ProtoError> {
+        match v {
+            0 => Ok(Self::Cosine),
+            1 => Ok(Self::L2),
+            2 => Ok(Self::Dot),
+            _ => Err(ProtoError::BadRvfHeader),
+        }
+    }
+}
+
 /// RVF file header (written once, provisional field widths).
+///
+/// Wire layout (32 bytes total, all little-endian):
+/// `0..4 magic("RVF1") | 4..6 version u16 | 6..8 dim u16 | 8 metric u8 |
+///  9 flags u8 | 10..18 created_us i64 | 18..32 reserved (zeros)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RvfHeader {
     pub version: u16,
@@ -35,6 +54,52 @@ pub struct RvfHeader {
     pub metric: u8,
     pub flags: u8,
     pub created_us: i64,
+}
+
+impl RvfHeader {
+    pub const WIRE_LEN: usize = RVF_HEADER_LEN;
+
+    /// Build a fresh header with `created_us` set to the current wall clock.
+    pub fn current(metric: Metric, dim: u16) -> Self {
+        let created_us = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_micros() as i64)
+            .unwrap_or(0);
+        Self {
+            version: RVF_VERSION,
+            dim,
+            metric: metric as u8,
+            flags: 0,
+            created_us,
+        }
+    }
+
+    pub fn to_bytes(&self) -> [u8; RVF_HEADER_LEN] {
+        let mut b = [0u8; RVF_HEADER_LEN];
+        b[0..4].copy_from_slice(&RVF_MAGIC);
+        b[4..6].copy_from_slice(&self.version.to_le_bytes());
+        b[6..8].copy_from_slice(&self.dim.to_le_bytes());
+        b[8] = self.metric;
+        b[9] = self.flags;
+        b[10..18].copy_from_slice(&self.created_us.to_le_bytes());
+        b
+    }
+
+    pub fn from_bytes(buf: &[u8]) -> Result<Self, ProtoError> {
+        if buf.len() < RVF_HEADER_LEN {
+            return Err(ProtoError::Truncated);
+        }
+        if buf[0..4] != RVF_MAGIC {
+            return Err(ProtoError::BadRvfHeader);
+        }
+        Ok(Self {
+            version: u16::from_le_bytes(buf[4..6].try_into().unwrap()),
+            dim: u16::from_le_bytes(buf[6..8].try_into().unwrap()),
+            metric: buf[8],
+            flags: buf[9],
+            created_us: i64::from_le_bytes(buf[10..18].try_into().unwrap()),
+        })
+    }
 }
 
 /// One append-only RVF record. **Provisional ~42-byte layout.**
@@ -99,5 +164,29 @@ mod tests {
             timestamp: 1_775_166_970,
         };
         assert_eq!(RvfRecord::from_bytes(&r.to_bytes()).unwrap(), r);
+    }
+
+    #[test]
+    fn header_roundtrips() {
+        let h = RvfHeader {
+            version: RVF_VERSION,
+            dim: 8,
+            metric: Metric::Cosine as u8,
+            flags: 0,
+            created_us: 1_775_166_970_000_000,
+        };
+        let bytes = h.to_bytes();
+        assert_eq!(bytes[0..4], RVF_MAGIC);
+        assert_eq!(RvfHeader::from_bytes(&bytes).unwrap(), h);
+    }
+
+    #[test]
+    fn header_rejects_bad_magic() {
+        let mut bytes = [0u8; RVF_HEADER_LEN];
+        bytes[0..4].copy_from_slice(b"XXXX");
+        assert!(matches!(
+            RvfHeader::from_bytes(&bytes),
+            Err(ProtoError::BadRvfHeader)
+        ));
     }
 }

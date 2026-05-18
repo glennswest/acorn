@@ -7,3 +7,5 @@ license.workspace = true
 
 [dependencies]
 acorn-proto = { workspace = true }
+thiserror   = { workspace = true }
+parking_lot = { workspace = true }
