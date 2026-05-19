@@ -7,3 +7,5 @@ license.workspace = true
 
 [dependencies]
 acorn-proto = { workspace = true }
+acorn-store = { workspace = true }
+serde       = { workspace = true }

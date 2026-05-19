@@ -7,8 +7,9 @@
 #![forbid(unsafe_code)]
 
 use acorn_proto::api::{
-    AttestationResponse, IngestRequest, IngestResponse, PairRequest, PairResponse, QueryRequest,
-    QueryResponse, WitnessVerifyResponse,
+    AttestationResponse, BoundaryResponse, CoherenceResponse, CognitiveSnapshotResponse,
+    IngestRequest, IngestResponse, PairRequest, PairResponse, QueryRequest, QueryResponse,
+    WitnessVerifyResponse,
 };
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::Deserialize;
@@ -119,6 +120,21 @@ impl AcornClient {
         self.get_json("/api/v1/system/health", false).await
     }
 
+    /// `GET /api/v1/boundary`.
+    pub async fn boundary(&self) -> Result<BoundaryResponse, ClientError> {
+        self.get_json("/api/v1/boundary", true).await
+    }
+
+    /// `GET /api/v1/coherence`.
+    pub async fn coherence(&self) -> Result<CoherenceResponse, ClientError> {
+        self.get_json("/api/v1/coherence", true).await
+    }
+
+    /// `GET /api/v1/cognitive/snapshot`.
+    pub async fn cognitive_snapshot(&self) -> Result<CognitiveSnapshotResponse, ClientError> {
+        self.get_json("/api/v1/cognitive/snapshot", true).await
+    }
+
     // ---------- private helpers ----------
 
     fn attach_auth(&self, headers: &mut HeaderMap) -> Result<(), ClientError> {
@@ -223,6 +239,7 @@ mod tests {
             witness,
             custody,
             auth: Arc::new(AuthState::new()),
+            cognitive: AppState::default_cognitive(),
             started_at: SystemTime::now(),
             version: "test",
         };
@@ -291,6 +308,14 @@ mod tests {
         let bytes = client.export().await.unwrap();
         assert!(bytes.len() >= 32);
         assert_eq!(&bytes[0..4], b"RVF1");
+
+        // Cognitive endpoints (data already ingested above).
+        let b = client.boundary().await.unwrap();
+        assert!(b.fragility >= 0.0 && b.fragility <= 1.0);
+        let coh = client.coherence().await.unwrap();
+        assert!(coh.coherence > 0.0 && coh.coherence <= 1.0);
+        let snap = client.cognitive_snapshot().await.unwrap();
+        assert_eq!(snap.vector_count, 2);
 
         server.abort();
         for f in files {

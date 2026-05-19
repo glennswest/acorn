@@ -30,9 +30,11 @@ use std::{
     time::SystemTime,
 };
 
+use acorn_cognitive::{Cognitive, CognitiveConfig};
 use acorn_proto::api::{
-    AttestationResponse, IngestRequest, IngestResponse, PairRequest, PairResponse, QueryHit,
-    QueryRequest, QueryResponse, WitnessVerifyResponse,
+    AttestationResponse, BoundaryResponse, CoherenceResponse, CognitiveSnapshotResponse,
+    IngestRequest, IngestResponse, PairRequest, PairResponse, QueryHit, QueryRequest,
+    QueryResponse, WitnessVerifyResponse,
 };
 use acorn_proto::rvf::RvfRecord;
 use acorn_store::{RvfStore, StoreError};
@@ -60,8 +62,16 @@ pub struct AppState {
     pub witness: Arc<WitnessChain>,
     pub custody: Arc<Custody>,
     pub auth: Arc<AuthState>,
+    pub cognitive: Arc<Cognitive>,
     pub started_at: SystemTime,
     pub version: &'static str,
+}
+
+impl AppState {
+    /// Default Cognitive config — convenience for tests and acornd.
+    pub fn default_cognitive() -> Arc<Cognitive> {
+        Arc::new(Cognitive::new(CognitiveConfig::default()))
+    }
 }
 
 pub struct AuthState {
@@ -182,6 +192,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/store/compact", post(handle_compact))
         .route("/api/v1/witness/verify", post(handle_verify))
         .route("/api/v1/custody/attestation", get(handle_attestation))
+        .route("/api/v1/boundary", get(handle_boundary))
+        .route("/api/v1/coherence", get(handle_coherence))
+        .route("/api/v1/cognitive/snapshot", get(handle_cognitive_snapshot))
         .route("/api/v1/system/health", get(handle_health))
         .with_state(state)
 }
@@ -346,6 +359,47 @@ async fn handle_attestation(
     }))
 }
 
+async fn handle_boundary(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<BoundaryResponse>, ApiError> {
+    require_bearer(&headers, &state.auth)?;
+    let vectors = state.store.vectors();
+    let snap = state.cognitive.snapshot(&vectors, state.store.metric());
+    Ok(Json(BoundaryResponse {
+        fragility: snap.fragility,
+    }))
+}
+
+async fn handle_coherence(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<CoherenceResponse>, ApiError> {
+    require_bearer(&headers, &state.auth)?;
+    let vectors = state.store.vectors();
+    let snap = state.cognitive.snapshot(&vectors, state.store.metric());
+    Ok(Json(CoherenceResponse {
+        coherence: snap.coherence,
+    }))
+}
+
+async fn handle_cognitive_snapshot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<CognitiveSnapshotResponse>, ApiError> {
+    require_bearer(&headers, &state.auth)?;
+    let vectors = state.store.vectors();
+    let snap = state.cognitive.snapshot(&vectors, state.store.metric());
+    Ok(Json(CognitiveSnapshotResponse {
+        vector_count: snap.vector_count,
+        fragility: snap.fragility,
+        coherence: snap.coherence,
+        min_cut: snap.min_cut,
+        k_neighbors: snap.k_neighbors,
+        coherence_window: snap.coherence_window,
+    }))
+}
+
 #[derive(Serialize)]
 struct HealthResponse {
     version: &'static str,
@@ -408,6 +462,7 @@ mod tests {
             witness,
             custody,
             auth: Arc::new(AuthState::new()),
+            cognitive: AppState::default_cognitive(),
             started_at: SystemTime::now(),
             version: "test",
         };

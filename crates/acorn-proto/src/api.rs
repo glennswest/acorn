@@ -91,3 +91,20 @@ pub struct AttestationResponse {
 pub struct BoundaryResponse {
     pub fragility: f32,
 }
+
+/// `GET /api/v1/coherence` response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoherenceResponse {
+    pub coherence: f32,
+}
+
+/// `GET /api/v1/cognitive/snapshot` response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CognitiveSnapshotResponse {
+    pub vector_count: usize,
+    pub fragility: f32,
+    pub coherence: f32,
+    pub min_cut: f32,
+    pub k_neighbors: usize,
+    pub coherence_window: usize,
+}

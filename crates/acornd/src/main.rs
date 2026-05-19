@@ -74,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
         witness: witness.clone(),
         custody: custody.clone(),
         auth,
+        cognitive: AppState::default_cognitive(),
         started_at: SystemTime::now(),
         version: env!("CARGO_PKG_VERSION"),
     };
