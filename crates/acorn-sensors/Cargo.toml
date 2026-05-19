@@ -1,9 +1,23 @@
 [package]
 name = "acorn-sensors"
-description = "Raspberry Pi GPIO/I2C sensor drivers (reed, PIR, vibration, ADS1115, BME280)."
+description = "Raspberry Pi GPIO/I2C sensor drivers (reed, PIR, vibration, ADS1115, BME280) + reflex rules."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+# Build the rppal/ads1x1x/bme280 backed implementations. Off by default —
+# enabling on non-Pi hosts will fail at build time.
+pi-hw = ["dep:rppal", "dep:ads1x1x", "dep:bme280"]
+
 [dependencies]
 acorn-proto = { workspace = true }
+async-trait = "0.1"
+thiserror   = { workspace = true }
+parking_lot = { workspace = true }
+tokio       = { workspace = true }
+
+rppal   = { workspace = true, optional = true }
+ads1x1x = { workspace = true, optional = true }
+bme280  = { workspace = true, optional = true }
