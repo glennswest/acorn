@@ -234,12 +234,21 @@ mod tests {
         let store = Arc::new(RvfStore::open_or_create(&rvf, Metric::Cosine).unwrap());
         let witness = Arc::new(WitnessChain::open(&wit).unwrap());
         let custody = Arc::new(Custody::load_or_create(&key).unwrap());
+        let cognitive = AppState::default_cognitive();
+        let mcp = AppState::default_mcp_registry(
+            store.clone(),
+            witness.clone(),
+            custody.clone(),
+            cognitive.clone(),
+        );
         let state = AppState {
             store,
             witness,
             custody,
             auth: Arc::new(AuthState::new()),
-            cognitive: AppState::default_cognitive(),
+            cognitive,
+            mcp,
+            swarm: Arc::new(acorn_api::SwarmState::new()),
             started_at: SystemTime::now(),
             version: "test",
         };

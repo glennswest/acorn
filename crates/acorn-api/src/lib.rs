@@ -31,6 +31,7 @@ use std::{
 };
 
 use acorn_cognitive::{Cognitive, CognitiveConfig};
+use acorn_mcp::{JsonRpcRequest, McpContext, Registry};
 use acorn_proto::api::{
     AttestationResponse, BoundaryResponse, CoherenceResponse, CognitiveSnapshotResponse,
     IngestRequest, IngestResponse, PairRequest, PairResponse, QueryHit, QueryRequest,
@@ -63,6 +64,8 @@ pub struct AppState {
     pub custody: Arc<Custody>,
     pub auth: Arc<AuthState>,
     pub cognitive: Arc<Cognitive>,
+    pub mcp: Arc<Registry>,
+    pub swarm: Arc<SwarmState>,
     pub started_at: SystemTime,
     pub version: &'static str,
 }
@@ -71,6 +74,55 @@ impl AppState {
     /// Default Cognitive config — convenience for tests and acornd.
     pub fn default_cognitive() -> Arc<Cognitive> {
         Arc::new(Cognitive::new(CognitiveConfig::default()))
+    }
+
+    /// Default MCP registry built from the runtime components.
+    pub fn default_mcp_registry(
+        store: Arc<RvfStore>,
+        witness: Arc<WitnessChain>,
+        custody: Arc<Custody>,
+        cognitive: Arc<Cognitive>,
+    ) -> Arc<Registry> {
+        Arc::new(acorn_mcp::default_registry(McpContext {
+            store,
+            witness,
+            custody,
+            cognitive,
+        }))
+    }
+}
+
+/// In-memory swarm peer registry. Phase 4 scaffold — chain reconciliation
+/// across peers is a follow-up.
+#[derive(Default)]
+pub struct SwarmState {
+    peers: parking_lot::RwLock<Vec<Peer>>,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct Peer {
+    pub id: String,
+    pub url: String,
+}
+
+impl SwarmState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn add(&self, peer: Peer) {
+        let mut v = self.peers.write();
+        if !v.iter().any(|p| p.id == peer.id) {
+            v.push(peer);
+        }
+    }
+    pub fn remove(&self, id: &str) -> bool {
+        let mut v = self.peers.write();
+        let before = v.len();
+        v.retain(|p| p.id != id);
+        v.len() != before
+    }
+    pub fn list(&self) -> Vec<Peer> {
+        self.peers.read().clone()
     }
 }
 
@@ -195,6 +247,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/boundary", get(handle_boundary))
         .route("/api/v1/coherence", get(handle_coherence))
         .route("/api/v1/cognitive/snapshot", get(handle_cognitive_snapshot))
+        .route("/api/v1/mcp", post(handle_mcp))
+        .route("/api/v1/swarm/peers", get(handle_swarm_list).post(handle_swarm_add))
+        .route("/api/v1/swarm/peers/:id", axum::routing::delete(handle_swarm_remove))
+        .route("/api/v1/swarm/sync", post(handle_swarm_sync))
         .route("/api/v1/system/health", get(handle_health))
         .with_state(state)
 }
@@ -411,6 +467,99 @@ struct HealthResponse {
     uptime_secs: u64,
 }
 
+async fn handle_mcp(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<JsonRpcRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_bearer(&headers, &state.auth)?;
+    let resp = state.mcp.dispatch(req);
+    Ok(Json(serde_json::to_value(resp).unwrap()))
+}
+
+async fn handle_swarm_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Peer>>, ApiError> {
+    require_bearer(&headers, &state.auth)?;
+    Ok(Json(state.swarm.list()))
+}
+
+async fn handle_swarm_add(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(peer): Json<Peer>,
+) -> Result<StatusCode, ApiError> {
+    require_bearer(&headers, &state.auth)?;
+    if peer.id.trim().is_empty() || peer.url.trim().is_empty() {
+        return Err(ApiError::BadRequest("id and url required".into()));
+    }
+    state.swarm.add(peer);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn handle_swarm_remove(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Result<StatusCode, ApiError> {
+    require_bearer(&headers, &state.auth)?;
+    if state.swarm.remove(&id) {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Ok(StatusCode::NOT_FOUND)
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SyncRequest {
+    peer_epoch: u64,
+    peer_head: String,
+}
+
+#[derive(Serialize)]
+struct SyncResponse {
+    local_epoch: u64,
+    local_count: u64,
+    local_head: String,
+    /// "ahead" — we have a higher epoch; peer should pull from us.
+    /// "behind" — peer has a higher epoch; we'd pull from them (TODO).
+    /// "synced" — same epoch.
+    relation: &'static str,
+}
+
+async fn handle_swarm_sync(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<SyncRequest>,
+) -> Result<Json<SyncResponse>, ApiError> {
+    require_bearer(&headers, &state.auth)?;
+    let local_epoch = state.store.epoch();
+    let local_count = state.witness.count();
+    let local_head = hex::encode(state.witness.head());
+    let relation = if local_epoch > req.peer_epoch {
+        "ahead"
+    } else if local_epoch < req.peer_epoch {
+        // Pulling deltas from a higher-epoch peer with witness-chain
+        // integrity is non-trivial — left as a follow-up.
+        tracing::info!(
+            local = local_epoch,
+            remote = req.peer_epoch,
+            peer_head = %req.peer_head,
+            "swarm pull TODO"
+        );
+        "behind"
+    } else {
+        "synced"
+    };
+    Ok(Json(SyncResponse {
+        local_epoch,
+        local_count,
+        local_head,
+        relation,
+    }))
+}
+
 async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse> {
     let uptime = SystemTime::now()
         .duration_since(state.started_at)
@@ -457,12 +606,21 @@ mod tests {
         let store = Arc::new(RvfStore::open_or_create(&rvf, Metric::Cosine).unwrap());
         let witness = Arc::new(WitnessChain::open(&wit).unwrap());
         let custody = Arc::new(Custody::load_or_create(&key).unwrap());
+        let cognitive = AppState::default_cognitive();
+        let mcp = AppState::default_mcp_registry(
+            store.clone(),
+            witness.clone(),
+            custody.clone(),
+            cognitive.clone(),
+        );
         let state = AppState {
             store,
             witness,
             custody,
             auth: Arc::new(AuthState::new()),
-            cognitive: AppState::default_cognitive(),
+            cognitive,
+            mcp,
+            swarm: Arc::new(SwarmState::new()),
             started_at: SystemTime::now(),
             version: "test",
         };

@@ -10,6 +10,7 @@ acorn-proto     = { workspace = true }
 acorn-store     = { workspace = true }
 acorn-witness   = { workspace = true }
 acorn-cognitive = { workspace = true }
+acorn-mcp       = { workspace = true }
 
 axum          = { workspace = true }
 tower-http    = { workspace = true }

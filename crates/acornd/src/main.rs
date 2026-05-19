@@ -9,7 +9,7 @@
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::SystemTime};
 
-use acorn_api::{router, AppState, AuthState};
+use acorn_api::{router, AppState, AuthState, SwarmState};
 use acorn_proto::rvf::Metric;
 use acorn_store::RvfStore;
 use acorn_witness::{Custody, WitnessChain};
@@ -69,12 +69,21 @@ async fn main() -> anyhow::Result<()> {
     let custody = Arc::new(Custody::load_or_create(&args.custody)?);
     let auth = Arc::new(AuthState::new());
 
+    let cognitive = AppState::default_cognitive();
+    let mcp = AppState::default_mcp_registry(
+        store.clone(),
+        witness.clone(),
+        custody.clone(),
+        cognitive.clone(),
+    );
     let state = AppState {
         store: store.clone(),
         witness: witness.clone(),
         custody: custody.clone(),
         auth,
-        cognitive: AppState::default_cognitive(),
+        cognitive,
+        mcp,
+        swarm: Arc::new(SwarmState::new()),
         started_at: SystemTime::now(),
         version: env!("CARGO_PKG_VERSION"),
     };
