@@ -6,4 +6,15 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-acorn-proto = { workspace = true }
+acorn-proto   = { workspace = true }
+acorn-store   = { workspace = true }
+acorn-witness = { workspace = true }
+acorn-api     = { workspace = true }
+
+tokio              = { workspace = true }
+axum               = { workspace = true }
+clap               = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }
+sha2               = { workspace = true }
