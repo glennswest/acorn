@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 authors = ["Glenn West"]
@@ -34,10 +34,12 @@ serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Async runtime / HTTP
-tokio      = { version = "1", features = ["full"] }
-axum       = "0.7"
-tower-http = { version = "0.6", features = ["trace", "cors"] }
-reqwest    = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio        = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-util = "0.3"
+axum         = { version = "0.7", features = ["ws"] }
+tower-http   = { version = "0.6", features = ["trace", "cors"] }
+reqwest      = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Crypto / hashing
 sha2          = "0.10"
@@ -58,6 +60,7 @@ bytes              = "1"
 petgraph = "0.6"
 
 # Pi hardware drivers (P2; gated behind `pi-hw` feature in acorn-sensors)
-rppal   = "0.19"
-bme280  = "0.5"
-ads1x1x = "0.3"
+rppal              = "0.19"
+bme280             = "0.5"
+ads1x1x            = "0.3"
+linux-embedded-hal = "0.4"

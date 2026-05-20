@@ -22,6 +22,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod events;
+pub mod fleet;
+
+pub use events::{EventBus, RawReadingEvent, SerializableReading, Webhook};
+pub use fleet::{NodeRegistry, NodeState};
+
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering as AtomicOrdering},
@@ -66,6 +72,8 @@ pub struct AppState {
     pub cognitive: Arc<Cognitive>,
     pub mcp: Arc<Registry>,
     pub swarm: Arc<SwarmState>,
+    pub event_bus: Arc<EventBus>,
+    pub nodes: Arc<NodeRegistry>,
     pub started_at: SystemTime,
     pub version: &'static str,
 }
@@ -251,6 +259,18 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/swarm/peers", get(handle_swarm_list).post(handle_swarm_add))
         .route("/api/v1/swarm/peers/:id", axum::routing::delete(handle_swarm_remove))
         .route("/api/v1/swarm/sync", post(handle_swarm_sync))
+        .route("/api/v1/events", get(events::handle_events_sse))
+        .route("/api/v1/ws", get(events::handle_events_ws))
+        .route(
+            "/api/v1/webhooks",
+            get(events::handle_webhooks_list).post(events::handle_webhooks_add),
+        )
+        .route(
+            "/api/v1/webhooks/:id",
+            axum::routing::delete(events::handle_webhooks_remove),
+        )
+        .route("/api/v1/nodes", get(fleet::handle_nodes_list))
+        .route("/api/v1/nodes/:id", get(fleet::handle_node_get))
         .route("/api/v1/system/health", get(handle_health))
         .with_state(state)
 }
@@ -621,6 +641,8 @@ mod tests {
             cognitive,
             mcp,
             swarm: Arc::new(SwarmState::new()),
+            event_bus: Arc::new(EventBus::new()),
+            nodes: Arc::new(NodeRegistry::new()),
             started_at: SystemTime::now(),
             version: "test",
         };

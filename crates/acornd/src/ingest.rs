@@ -1,23 +1,31 @@
 //! UDP ingest task for `acornd`.
 //!
-//! Listens for [`EdgeFeaturePkt`] datagrams on the configured port, converts
-//! each to an [`RvfRecord`] with a content-addressed ID, then appends to the
-//! witness chain and the store. Bad/short packets are dropped silently
-//! (logged at debug level).
+//! Listens for [`EdgeFeaturePkt`] datagrams, converts each to an [`RvfRecord`]
+//! with a content-addressed ID, appends to the witness chain and the store,
+//! observes the source node in the [`NodeRegistry`], and evaluates [`Reflex`]
+//! over the feature vector — broadcasting any resulting [`SensingEvent`]s on
+//! the shared [`EventBus`].
 
 use std::{net::SocketAddr, sync::Arc};
 
+use acorn_api::{EventBus, NodeRegistry};
+use acorn_proto::event::FeatureVector;
 use acorn_proto::rvf::RvfRecord;
 use acorn_proto::udp::{EdgeFeaturePkt, FEATURE_PKT_LEN};
+use acorn_sensors::Reflex;
 use acorn_store::RvfStore;
 use acorn_witness::WitnessChain;
 use sha2::{Digest, Sha256};
 use tokio::net::UdpSocket;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     addr: SocketAddr,
     store: Arc<RvfStore>,
     witness: Arc<WitnessChain>,
+    reflex: Arc<Reflex>,
+    bus: Arc<EventBus>,
+    nodes: Arc<NodeRegistry>,
 ) -> anyhow::Result<()> {
     let sock = UdpSocket::bind(addr).await?;
     tracing::info!(%addr, "udp ingest listening");
@@ -35,6 +43,11 @@ pub async fn run(
                 continue;
             }
         };
+
+        // Fleet observability.
+        nodes.observe(pkt.node_id, pkt.seq, pkt.timestamp_us, pkt.features);
+
+        // Persist.
         let rec = packet_to_record(&pkt);
         if let Err(e) = witness.append(&rec.to_bytes()) {
             tracing::warn!(?e, "witness append failed; dropping record");
@@ -45,6 +58,14 @@ pub async fn run(
                 ?e,
                 "store append failed AFTER witness commit — chain ahead of store"
             );
+            // Don't bail — keep processing.
+        }
+
+        // Reflex → broadcast.
+        let fv = FeatureVector(pkt.features);
+        let zone = format!("node-{}", pkt.node_id);
+        for ev in reflex.evaluate(&fv, &zone) {
+            bus.publish_sensing(ev);
         }
     }
 }

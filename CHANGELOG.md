@@ -52,5 +52,50 @@
 - `acorn-proto` implemented (wire types, RVF format, HTTP DTOs, sensing event
   vocabulary). All other crates as documented stubs with per-phase TODOs.
 
+## [v0.3.0] — 2026-05-20
+
+### Added
+- **Live event pipeline.**
+  - `EventBus` in acorn-api: tokio broadcast channels for `SensingEvent`
+    and `RawReadingEvent`, plus an in-memory webhook URL registry.
+  - `GET /api/v1/events` — Server-Sent Events stream of `SensingEvent`s
+    (newline-delimited JSON, 15s keep-alive pings).
+  - `GET /api/v1/ws` — WebSocket upgrade serving the same JSON.
+  - `GET / POST / DELETE /api/v1/webhooks` — register fire-and-forget
+    HTTP POST destinations for sensing events.
+  - Webhook fan-out background task with 5s per-request timeout.
+- **UDP ingest → Reflex → broadcast** wired in `acornd::ingest`. Each
+  feature packet is now observed in the node registry, persisted to
+  store+witness, evaluated by `Reflex`, and any resulting `SensingEvent`s
+  are published on the bus.
+- **ESP32 fleet observability.** `NodeRegistry` tracks per-node
+  last-seen, packet count, last sequence, and detects sequence gaps
+  (sub-16-bit modular). New endpoints:
+  - `GET /api/v1/nodes` — all known nodes
+  - `GET /api/v1/nodes/:id` — one node
+- **Sensor poll task** in `acornd`. Polls every configured sensor at
+  `--sensor-poll-ms` cadence, publishes `RawReadingEvent` to the bus.
+  Bound list built from CLI flags; default uses mocks, `--features pi-hw`
+  switches to real drivers (with graceful fall-back if a constructor
+  errors).
+- **Real Pi hardware drivers** under `pi-hw` feature on `acorn-sensors`:
+  rppal-backed GPIO inputs (pull-up), `ads1x1x` ADS1115 (one-shot,
+  ±4.096V FSR, 4 channels), `bme280` climate. All compile gated on
+  `target_os = "linux"`; off-Pi builds get `HardwareUnavailable`.
+- **`acornd` CLI flags** for the new surface:
+  `--reed-pin`, `--pir-pin`, `--vibration-pin` (BCM numbers, default 5/6/13),
+  `--i2c-bus` (default `/dev/i2c-1`), `--ads1115-addr`, `--bme280-addr`
+  (parsed as `0x..` or decimal), `--sensor-poll-ms`, `--sensors-off`,
+  `--presence-threshold`, `--motion-threshold`. All also via `ACORND_*`
+  env vars.
+
+### Verified end-to-end
+- UDP packet with `presence=0.9` from `node_id=42` arrives → node appears
+  in `/api/v1/nodes` with packet_count=1.
+- Second packet with `seq=4` (skipping 2,3) → `gaps=2`.
+- Third packet flips presence to 0.0 → `SensingEvent::Occupancy
+  {occupied:false}` arrives on the SSE stream `data:` line.
+- Webhook add/list returns assigned id and the registered URL.
+
 ## [Unreleased]
 <!-- New unreleased changes go here -->

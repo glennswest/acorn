@@ -5,10 +5,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+# Forward to the acorn-sensors feature that pulls in the rppal/ads1x1x/bme280
+# drivers. Build with `cargo build -p acornd --features pi-hw` on the Pi.
+pi-hw = ["acorn-sensors/pi-hw"]
+
 [dependencies]
 acorn-proto   = { workspace = true }
 acorn-store   = { workspace = true }
 acorn-witness = { workspace = true }
+acorn-sensors = { workspace = true }
 acorn-api     = { workspace = true }
 
 tokio              = { workspace = true }

@@ -249,6 +249,8 @@ mod tests {
             cognitive,
             mcp,
             swarm: Arc::new(acorn_api::SwarmState::new()),
+            event_bus: Arc::new(acorn_api::EventBus::new()),
+            nodes: Arc::new(acorn_api::NodeRegistry::new()),
             started_at: SystemTime::now(),
             version: "test",
         };

@@ -147,55 +147,158 @@ impl Sensor for MockClimate {
 // Pi hardware impls (gated)
 // ---------------------------------------------------------------------------
 
-/// Pi-hardware implementations. When the `pi-hw` feature is off the public
-/// constructors return [`SensorError::HardwareUnavailable`].
+/// Pi-hardware implementations. The constructors compile on any host. On
+/// linux with the `pi-hw` feature on they instantiate real drivers; on any
+/// other target / without the feature they return
+/// [`SensorError::HardwareUnavailable`].
 pub mod pi {
     use super::*;
 
-    #[cfg(not(feature = "pi-hw"))]
-    pub fn reed_on_gpio(_pin: u8) -> Result<Box<dyn Sensor>, SensorError> {
+    pub fn reed_on_gpio(pin: u8) -> Result<Box<dyn Sensor>, SensorError> {
+        gpio_input(pin, SensorKind::Reed)
+    }
+    pub fn pir_on_gpio(pin: u8) -> Result<Box<dyn Sensor>, SensorError> {
+        gpio_input(pin, SensorKind::Pir)
+    }
+    pub fn vibration_on_gpio(pin: u8) -> Result<Box<dyn Sensor>, SensorError> {
+        gpio_input(pin, SensorKind::Vibration)
+    }
+    pub fn adc_on_i2c(addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
+        ads1115(addr)
+    }
+    pub fn climate_on_i2c(addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
+        bme280(addr)
+    }
+
+    // --- Stubs (any host w/o pi-hw, or non-linux even with pi-hw) ----------
+
+    #[cfg(not(all(feature = "pi-hw", target_os = "linux")))]
+    fn gpio_input(_pin: u8, _kind: SensorKind) -> Result<Box<dyn Sensor>, SensorError> {
         Err(SensorError::HardwareUnavailable)
     }
-    #[cfg(not(feature = "pi-hw"))]
-    pub fn pir_on_gpio(_pin: u8) -> Result<Box<dyn Sensor>, SensorError> {
+    #[cfg(not(all(feature = "pi-hw", target_os = "linux")))]
+    fn ads1115(_addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
         Err(SensorError::HardwareUnavailable)
     }
-    #[cfg(not(feature = "pi-hw"))]
-    pub fn vibration_on_gpio(_pin: u8) -> Result<Box<dyn Sensor>, SensorError> {
-        Err(SensorError::HardwareUnavailable)
-    }
-    #[cfg(not(feature = "pi-hw"))]
-    pub fn adc_on_i2c(_addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
-        Err(SensorError::HardwareUnavailable)
-    }
-    #[cfg(not(feature = "pi-hw"))]
-    pub fn climate_on_i2c(_addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
+    #[cfg(not(all(feature = "pi-hw", target_os = "linux")))]
+    fn bme280(_addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
         Err(SensorError::HardwareUnavailable)
     }
 
-    // The actual `pi-hw` implementations use rppal::gpio, ads1x1x, bme280.
-    // They're left as TODOs here — wiring the real drivers requires a
-    // physical Pi for end-to-end validation and is outside the scope of the
-    // workstation build target.
-    #[cfg(feature = "pi-hw")]
-    pub fn reed_on_gpio(_pin: u8) -> Result<Box<dyn Sensor>, SensorError> {
-        Err(SensorError::Driver("rppal wiring TODO".into()))
+    // --- Real drivers (linux + pi-hw) --------------------------------------
+
+    #[cfg(all(feature = "pi-hw", target_os = "linux"))]
+    fn gpio_input(pin: u8, kind: SensorKind) -> Result<Box<dyn Sensor>, SensorError> {
+        use rppal::gpio::Gpio;
+        let pin = Gpio::new()
+            .map_err(|e| SensorError::Driver(format!("gpio init: {e}")))?
+            .get(pin)
+            .map_err(|e| SensorError::Driver(format!("gpio pin: {e}")))?
+            .into_input_pullup();
+        Ok(Box::new(RppalDigital { kind, pin }))
     }
-    #[cfg(feature = "pi-hw")]
-    pub fn pir_on_gpio(_pin: u8) -> Result<Box<dyn Sensor>, SensorError> {
-        Err(SensorError::Driver("rppal wiring TODO".into()))
+
+    #[cfg(all(feature = "pi-hw", target_os = "linux"))]
+    pub(super) struct RppalDigital {
+        pub kind: SensorKind,
+        pub pin: rppal::gpio::InputPin,
     }
-    #[cfg(feature = "pi-hw")]
-    pub fn vibration_on_gpio(_pin: u8) -> Result<Box<dyn Sensor>, SensorError> {
-        Err(SensorError::Driver("rppal wiring TODO".into()))
+
+    #[cfg(all(feature = "pi-hw", target_os = "linux"))]
+    #[async_trait::async_trait]
+    impl Sensor for RppalDigital {
+        fn kind(&self) -> SensorKind {
+            self.kind
+        }
+        async fn poll(&mut self) -> Result<SensorReading, SensorError> {
+            Ok(SensorReading::Digital {
+                high: self.pin.is_high(),
+            })
+        }
     }
-    #[cfg(feature = "pi-hw")]
-    pub fn adc_on_i2c(_addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
-        Err(SensorError::Driver("ads1x1x wiring TODO".into()))
+
+    #[cfg(all(feature = "pi-hw", target_os = "linux"))]
+    fn ads1115(addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
+        use ads1x1x::{channel, Ads1x1x, FullScaleRange, TargetAddr};
+        use linux_embedded_hal::I2cdev;
+        let dev = I2cdev::new("/dev/i2c-1")
+            .map_err(|e| SensorError::Driver(format!("i2c open: {e}")))?;
+        let target = TargetAddr::new(addr)
+            .map_err(|e| SensorError::Driver(format!("ads addr: {e:?}")))?;
+        let mut adc = Ads1x1x::new_ads1115(dev, target);
+        adc.set_full_scale_range(FullScaleRange::Within4_096V)
+            .map_err(|e| SensorError::Driver(format!("ads fsr: {e:?}")))?;
+        Ok(Box::new(Ads1115Sensor { adc }))
     }
-    #[cfg(feature = "pi-hw")]
-    pub fn climate_on_i2c(_addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
-        Err(SensorError::Driver("bme280 wiring TODO".into()))
+
+    #[cfg(all(feature = "pi-hw", target_os = "linux"))]
+    pub(super) struct Ads1115Sensor {
+        pub adc: ads1x1x::Ads1x1x<
+            linux_embedded_hal::I2cdev,
+            ads1x1x::ic::Ads1115,
+            ads1x1x::ic::Resolution16Bit,
+            ads1x1x::mode::OneShot,
+        >,
+    }
+
+    #[cfg(all(feature = "pi-hw", target_os = "linux"))]
+    #[async_trait::async_trait]
+    impl Sensor for Ads1115Sensor {
+        fn kind(&self) -> SensorKind {
+            SensorKind::Adc
+        }
+        async fn poll(&mut self) -> Result<SensorReading, SensorError> {
+            use ads1x1x::channel::*;
+            let a = nb::block!(self.adc.read(SingleA0))
+                .map_err(|e| SensorError::Driver(format!("ads a0: {e:?}")))?;
+            let b = nb::block!(self.adc.read(SingleA1))
+                .map_err(|e| SensorError::Driver(format!("ads a1: {e:?}")))?;
+            let c = nb::block!(self.adc.read(SingleA2))
+                .map_err(|e| SensorError::Driver(format!("ads a2: {e:?}")))?;
+            let d = nb::block!(self.adc.read(SingleA3))
+                .map_err(|e| SensorError::Driver(format!("ads a3: {e:?}")))?;
+            Ok(SensorReading::Adc {
+                channels: [a, b, c, d],
+            })
+        }
+    }
+
+    #[cfg(all(feature = "pi-hw", target_os = "linux"))]
+    fn bme280(addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
+        use bme280::i2c::BME280;
+        use linux_embedded_hal::{Delay, I2cdev};
+        let dev = I2cdev::new("/dev/i2c-1")
+            .map_err(|e| SensorError::Driver(format!("i2c open: {e}")))?;
+        let mut driver = BME280::new(dev, addr);
+        driver
+            .init(&mut Delay)
+            .map_err(|e| SensorError::Driver(format!("bme280 init: {e:?}")))?;
+        Ok(Box::new(Bme280Sensor { driver }))
+    }
+
+    #[cfg(all(feature = "pi-hw", target_os = "linux"))]
+    pub(super) struct Bme280Sensor {
+        pub driver: bme280::i2c::BME280<linux_embedded_hal::I2cdev>,
+    }
+
+    #[cfg(all(feature = "pi-hw", target_os = "linux"))]
+    #[async_trait::async_trait]
+    impl Sensor for Bme280Sensor {
+        fn kind(&self) -> SensorKind {
+            SensorKind::Climate
+        }
+        async fn poll(&mut self) -> Result<SensorReading, SensorError> {
+            use linux_embedded_hal::Delay;
+            let m = self
+                .driver
+                .measure(&mut Delay)
+                .map_err(|e| SensorError::Driver(format!("bme280 measure: {e:?}")))?;
+            Ok(SensorReading::Climate {
+                temp_c: m.temperature,
+                humidity_pct: m.humidity,
+                pressure_hpa: m.pressure / 100.0,
+            })
+        }
     }
 }
 
