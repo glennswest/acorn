@@ -40,7 +40,7 @@ section = "net"
 priority = "optional"
 depends = "$auto, adduser, systemd"
 assets = [
-    ["../../target/aarch64-unknown-linux-gnu/release/acornd", "usr/bin/", "755"],
+    ["target/release/acornd", "usr/bin/", "755"],
     ["../../packaging/acornd.service", "lib/systemd/system/", "644"],
     ["../../packaging/acornd.env", "etc/default/acornd", "644"],
     ["../../README.md", "usr/share/doc/acornd/README.md", "644"],
