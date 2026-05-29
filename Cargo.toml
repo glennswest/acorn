@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 license = "MIT"
 authors = ["Glenn West"]
@@ -58,4 +58,8 @@ bytes              = "1"
 
 # Graph algorithms (P3 cognitive)
 petgraph = "0.6"
+
+# MQTT publish
+rumqttc = "0.24"
+url     = "2"
 

@@ -9,3 +9,4 @@ license.workspace = true
 acorn-proto = { workspace = true }
 acorn-store = { workspace = true }
 serde       = { workspace = true }
+parking_lot = { workspace = true }

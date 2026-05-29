@@ -12,7 +12,11 @@
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::SystemTime};
 
-use acorn_api::{events::spawn_webhook_fanout, router, AppState, AuthState, EventBus, NodeRegistry, SwarmState};
+use acorn_api::{
+    events::spawn_webhook_fanout,
+    mqtt::{spawn_mqtt_publisher, MqttConfig},
+    router, AppState, AuthState, EventBus, NodeRegistry, SwarmState,
+};
 use acorn_proto::rvf::Metric;
 use acorn_sensors::{Reflex, ReflexConfig};
 use acorn_store::RvfStore;
@@ -56,6 +60,27 @@ struct Args {
     /// Motion-energy threshold (0..1).
     #[arg(long, env = "ACORND_MOTION_THRESHOLD", default_value_t = 0.7)]
     motion_threshold: f32,
+
+    /// MQTT broker URL, e.g. `mqtt://zman.g9.lo:1883`. When unset, MQTT
+    /// publishing is disabled.
+    #[arg(long, env = "ACORND_MQTT_BROKER")]
+    mqtt_broker: Option<String>,
+
+    /// MQTT topic prefix; the kind and zone are appended.
+    #[arg(long, env = "ACORND_MQTT_TOPIC_PREFIX", default_value = "acorn/events")]
+    mqtt_topic_prefix: String,
+
+    /// MQTT client id; defaults to `acorn-<device_id>`.
+    #[arg(long, env = "ACORND_MQTT_CLIENT_ID")]
+    mqtt_client_id: Option<String>,
+
+    /// MQTT username.
+    #[arg(long, env = "ACORND_MQTT_USERNAME")]
+    mqtt_username: Option<String>,
+
+    /// MQTT password.
+    #[arg(long, env = "ACORND_MQTT_PASSWORD", hide_env_values = true)]
+    mqtt_password: Option<String>,
 }
 
 fn parse_metric(s: &str) -> Result<Metric, String> {
@@ -137,6 +162,20 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     let _webhook_handle = spawn_webhook_fanout(event_bus.clone());
+
+    if let Some(url) = args.mqtt_broker.clone() {
+        let cfg = MqttConfig {
+            url,
+            topic_prefix: args.mqtt_topic_prefix.clone(),
+            client_id: args
+                .mqtt_client_id
+                .clone()
+                .unwrap_or_else(|| format!("acorn-{}", custody.device_id())),
+            username: args.mqtt_username.clone(),
+            password: args.mqtt_password.clone(),
+        };
+        let _ = spawn_mqtt_publisher(cfg, event_bus.clone());
+    }
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {

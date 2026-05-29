@@ -136,5 +136,44 @@
   `--motion-threshold` — the right abstraction over the incoming
   FeatureVector stream, no hardware required.
 
+## [v0.4.1] — 2026-05-21
+
+### Fixed
+- **Runtime starvation on the cognitive endpoint.** The HTTP handlers for
+  `/api/v1/{boundary,coherence,cognitive/snapshot}` (and the matching
+  `seed.cognitive.*` MCP tools) ran Stoer-Wagner (O(V³)) synchronously
+  on tokio worker threads. The fleet UI polls those endpoints every 2 s,
+  so with a non-trivial RVF store all four workers eventually pile up in
+  the snapshot computation, the reactor never gets a chance to wake the
+  UDP-ingest task, and incoming feature packets queue indefinitely in
+  the kernel socket without ever being read. On zman.g9.lo this looked
+  like "acornd seems alive but ESP32 traffic produces zero
+  SensingEvents". Fix:
+  - `Cognitive::cached_or_compute` — TTL cache (default 2 s) wrapping
+    the snapshot. Hits inside TTL skip the compute path entirely.
+  - HTTP handlers route the compute through `tokio::task::spawn_blocking`
+    so it never holds a runtime worker.
+  - MCP tools `seed.cognitive.snapshot` and `seed.cognitive.boundary`
+    funnel through the same cache.
+
+### Changed
+- **`NodeState` now tracks Pi-side wall-clock receive time** separately
+  from the ESP32-supplied `timestamp_us`. The old `last_seen_us` is
+  replaced by `last_received_us` (Pi clock at receive) and
+  `last_node_clock_us` (whatever the node sent). UI shows the Pi-side
+  value as `last_seen` (rendered as `Ns ago`) and the node clock as a
+  separate column, so node clock skew (no NTP on ESP32 etc.) is visible
+  instead of being silently misrepresented as wall-clock.
+
+### Added
+- **MQTT publish fan-out.** Sensing events are mirrored to an MQTT
+  broker when `--mqtt-broker` (or `ACORND_MQTT_BROKER`) is set. Topic
+  `<prefix>/<kind>/<zone>` (default prefix `acorn/events`), QoS-1,
+  retain off, JSON body. Uses `rumqttc` with built-in reconnect. Zone
+  segment is sanitized (`/`, `+`, `#`, control chars -> `_`). Flags:
+  `--mqtt-topic-prefix`, `--mqtt-client-id`, `--mqtt-username`,
+  `--mqtt-password`. All also via `ACORND_MQTT_*` env vars; password is
+  hidden in `--help`.
+
 ## [Unreleased]
 <!-- New unreleased changes go here -->

@@ -24,6 +24,7 @@
 
 pub mod events;
 pub mod fleet;
+pub mod mqtt;
 pub mod ui;
 
 pub use events::{EventBus, Webhook};
@@ -38,6 +39,7 @@ use std::{
 };
 
 use acorn_cognitive::{Cognitive, CognitiveConfig};
+pub use acorn_cognitive::CognitiveSnapshot;
 use acorn_mcp::{JsonRpcRequest, McpContext, Registry};
 use acorn_proto::api::{
     AttestationResponse, BoundaryResponse, CoherenceResponse, CognitiveSnapshotResponse,
@@ -475,8 +477,7 @@ async fn handle_boundary(
     headers: HeaderMap,
 ) -> Result<Json<BoundaryResponse>, ApiError> {
     require_bearer(&headers, &state.auth)?;
-    let vectors = state.store.vectors();
-    let snap = state.cognitive.snapshot(&vectors, state.store.metric());
+    let snap = compute_snapshot(&state).await;
     Ok(Json(BoundaryResponse {
         fragility: snap.fragility,
     }))
@@ -487,8 +488,7 @@ async fn handle_coherence(
     headers: HeaderMap,
 ) -> Result<Json<CoherenceResponse>, ApiError> {
     require_bearer(&headers, &state.auth)?;
-    let vectors = state.store.vectors();
-    let snap = state.cognitive.snapshot(&vectors, state.store.metric());
+    let snap = compute_snapshot(&state).await;
     Ok(Json(CoherenceResponse {
         coherence: snap.coherence,
     }))
@@ -499,8 +499,7 @@ async fn handle_cognitive_snapshot(
     headers: HeaderMap,
 ) -> Result<Json<CognitiveSnapshotResponse>, ApiError> {
     require_bearer(&headers, &state.auth)?;
-    let vectors = state.store.vectors();
-    let snap = state.cognitive.snapshot(&vectors, state.store.metric());
+    let snap = compute_snapshot(&state).await;
     Ok(Json(CognitiveSnapshotResponse {
         vector_count: snap.vector_count,
         fragility: snap.fragility,
@@ -509,6 +508,31 @@ async fn handle_cognitive_snapshot(
         k_neighbors: snap.k_neighbors,
         coherence_window: snap.coherence_window,
     }))
+}
+
+/// Shared cognitive snapshot path: TTL-cached, with the actual compute
+/// hop'd to `spawn_blocking` so Stoer-Wagner never starves the tokio
+/// runtime. All three cognitive HTTP handlers funnel through here.
+async fn compute_snapshot(state: &AppState) -> acorn_cognitive::CognitiveSnapshot {
+    let cognitive = state.cognitive.clone();
+    let store = state.store.clone();
+    tokio::task::spawn_blocking(move || {
+        cognitive.cached_or_compute(|| store.vectors(), store.metric())
+    })
+    .await
+    .unwrap_or_else(|_| {
+        state
+            .cognitive
+            .last_cached()
+            .unwrap_or(acorn_cognitive::CognitiveSnapshot {
+                vector_count: 0,
+                fragility: 0.0,
+                coherence: 1.0,
+                min_cut: 0.0,
+                k_neighbors: 0,
+                coherence_window: 0,
+            })
+    })
 }
 
 #[derive(Serialize)]

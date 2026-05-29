@@ -274,19 +274,25 @@ pub fn default_registry(ctx: McpContext) -> Registry {
     }
 
     // --- seed.cognitive.* --------------------------------------------------
+    // Both go through cached_or_compute so concurrent MCP traffic doesn't
+    // multiply Stoer-Wagner runs (which would starve the tokio runtime).
     {
         let ctx = ctx.clone();
         reg.register("seed.cognitive.snapshot", move |_| {
-            let vectors = ctx.store.vectors();
-            let snap = ctx.cognitive.snapshot(&vectors, ctx.store.metric());
+            let store = ctx.store.clone();
+            let snap = ctx
+                .cognitive
+                .cached_or_compute(|| store.vectors(), store.metric());
             Ok(serde_json::to_value(snap).unwrap())
         });
     }
     {
         let ctx = ctx.clone();
         reg.register("seed.cognitive.boundary", move |_| {
-            let vectors = ctx.store.vectors();
-            let snap = ctx.cognitive.snapshot(&vectors, ctx.store.metric());
+            let store = ctx.store.clone();
+            let snap = ctx
+                .cognitive
+                .cached_or_compute(|| store.vectors(), store.metric());
             Ok(json!({ "fragility": snap.fragility }))
         });
     }

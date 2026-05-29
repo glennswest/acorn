@@ -174,6 +174,17 @@ function fmtTs(us) {
   return d.toLocaleTimeString();
 }
 
+function ago(us) {
+  if (!us) return "—";
+  const dt = Math.floor((Date.now() - us / 1000) / 1000);
+  if (dt < 0) return "future?";
+  if (dt < 2) return "now";
+  if (dt < 60) return dt + "s ago";
+  if (dt < 3600) return Math.floor(dt/60) + "m ago";
+  if (dt < 86400) return Math.floor(dt/3600) + "h ago";
+  return Math.floor(dt/86400) + "d ago";
+}
+
 function fmtSecs(s) {
   if (s < 60) return s + "s";
   if (s < 3600) return Math.floor(s/60) + "m";
@@ -216,11 +227,12 @@ function renderNodes(nodes) {
     return;
   }
   nodes.sort((a, b) => a.node_id - b.node_id);
-  let html = "<table><thead><tr><th>node_id</th><th>last_seen</th><th>packets</th><th>last_seq</th><th>gaps</th><th>last feature vector</th></tr></thead><tbody>";
+  let html = "<table><thead><tr><th>node_id</th><th>last_seen (pi)</th><th>node_clock</th><th>packets</th><th>last_seq</th><th>gaps</th><th>last feature vector</th></tr></thead><tbody>";
   for (const n of nodes) {
     html += "<tr>";
     html += "<td>" + n.node_id + "</td>";
-    html += "<td>" + fmtTs(n.last_seen_us) + "</td>";
+    html += "<td>" + ago(n.last_received_us) + "</td>";
+    html += '<td class="fv">' + fmtTs(n.last_node_clock_us) + "</td>";
     html += "<td>" + n.packet_count + "</td>";
     html += "<td>" + n.last_seq + "</td>";
     html += "<td>" + (n.gaps > 0 ? '<span style="color:var(--bad)">' + n.gaps + '</span>' : n.gaps) + "</td>";

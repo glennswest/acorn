@@ -19,7 +19,14 @@ use crate::{require_bearer, ApiError, AppState};
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct NodeState {
     pub node_id: u8,
-    pub last_seen_us: i64,
+    /// Pi wall-clock μs since UNIX epoch at the moment of last packet receive.
+    /// THIS is the meaningful "last seen" for an operator looking at the
+    /// fleet — independent of whatever clock the ESP32 happens to be using.
+    pub last_received_us: i64,
+    /// ESP32's reported timestamp_us from the packet. Often relative to
+    /// node boot (if no NTP), so don't display as wall-clock without
+    /// knowing the source.
+    pub last_node_clock_us: i64,
     pub packet_count: u64,
     pub last_seq: u16,
     pub gaps: u64,
@@ -36,12 +43,19 @@ impl NodeRegistry {
         Self::default()
     }
 
-    /// Record a packet. Updates last_seen/seq/count and detects skips.
-    pub fn observe(&self, node_id: u8, seq: u16, ts_us: i64, features: [f32; 8]) {
+    /// Record a packet. Updates last_received_us (Pi-side wall clock),
+    /// last_node_clock_us (the ESP32-supplied μs), seq/count, and detects
+    /// skips.
+    pub fn observe(&self, node_id: u8, seq: u16, node_ts_us: i64, features: [f32; 8]) {
+        let now_us = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_micros() as i64)
+            .unwrap_or(0);
         let mut m = self.inner.write();
         let entry = m.entry(node_id).or_insert(NodeState {
             node_id,
-            last_seen_us: 0,
+            last_received_us: now_us,
+            last_node_clock_us: node_ts_us,
             packet_count: 0,
             last_seq: seq.wrapping_sub(1),
             gaps: 0,
@@ -54,7 +68,8 @@ impl NodeRegistry {
             let skipped = seq.wrapping_sub(expected) as u64;
             entry.gaps = entry.gaps.saturating_add(skipped);
         }
-        entry.last_seen_us = ts_us;
+        entry.last_received_us = now_us;
+        entry.last_node_clock_us = node_ts_us;
         entry.packet_count = entry.packet_count.saturating_add(1);
         entry.last_seq = seq;
         entry.last_features = features;

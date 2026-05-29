@@ -17,14 +17,21 @@
 
 #![forbid(unsafe_code)]
 
+use std::time::{Duration, Instant};
+
 use acorn_proto::rvf::Metric;
 use acorn_store::distance;
+use parking_lot::RwLock;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CognitiveConfig {
     pub k_neighbors: usize,
     pub coherence_window: usize,
+    /// Cache TTL for `cached_or_compute`. Default 2 s — matches the
+    /// fleet-UI poll cadence so we never compute Stoer-Wagner faster than
+    /// once every two seconds even under polling pressure.
+    pub cache_ttl: Duration,
 }
 
 impl Default for CognitiveConfig {
@@ -32,6 +39,7 @@ impl Default for CognitiveConfig {
         Self {
             k_neighbors: 5,
             coherence_window: 32,
+            cache_ttl: Duration::from_secs(2),
         }
     }
 }
@@ -48,17 +56,31 @@ pub struct CognitiveSnapshot {
 
 pub struct Cognitive {
     cfg: CognitiveConfig,
+    cache: RwLock<CachedSnap>,
+}
+
+#[derive(Default)]
+struct CachedSnap {
+    snap: Option<CognitiveSnapshot>,
+    computed_at: Option<Instant>,
 }
 
 impl Cognitive {
     pub fn new(cfg: CognitiveConfig) -> Self {
-        Self { cfg }
+        Self {
+            cfg,
+            cache: RwLock::new(CachedSnap::default()),
+        }
     }
 
     pub fn config(&self) -> CognitiveConfig {
         self.cfg
     }
 
+    /// Compute a fresh snapshot from the supplied vectors. **Synchronous and
+    /// CPU-bound (Stoer-Wagner is O(V³)).** Don't call this directly from a
+    /// tokio runtime thread — use [`Cognitive::cached_or_compute`] or wrap
+    /// in `tokio::task::spawn_blocking`.
     pub fn snapshot(
         &self,
         vectors: &[(u32, [f32; 8])],
@@ -81,6 +103,36 @@ impl Cognitive {
             k_neighbors: self.cfg.k_neighbors,
             coherence_window: self.cfg.coherence_window,
         }
+    }
+
+    /// Return the cached snapshot if it's within `cache_ttl`; otherwise
+    /// fetch vectors via `vectors_provider`, recompute, and cache. The
+    /// vectors_provider closure is only invoked on miss.
+    pub fn cached_or_compute(
+        &self,
+        vectors_provider: impl FnOnce() -> Vec<(u32, [f32; 8])>,
+        metric: Metric,
+    ) -> CognitiveSnapshot {
+        {
+            let g = self.cache.read();
+            if let (Some(snap), Some(at)) = (g.snap, g.computed_at) {
+                if at.elapsed() < self.cfg.cache_ttl {
+                    return snap;
+                }
+            }
+        }
+        let vectors = vectors_provider();
+        let snap = self.snapshot(&vectors, metric);
+        let mut g = self.cache.write();
+        g.snap = Some(snap);
+        g.computed_at = Some(Instant::now());
+        snap
+    }
+
+    /// Last cached snapshot (if any), regardless of TTL. Used by callers
+    /// that need a non-blocking read (e.g. SSE).
+    pub fn last_cached(&self) -> Option<CognitiveSnapshot> {
+        self.cache.read().snap
     }
 }
 
@@ -314,6 +366,7 @@ mod tests {
         let c = Cognitive::new(CognitiveConfig {
             k_neighbors: 3,
             coherence_window: 8,
+            ..CognitiveConfig::default()
         });
         let tight: Vec<(u32, [f32; 8])> = (0..8)
             .map(|i| {
