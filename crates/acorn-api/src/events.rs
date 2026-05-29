@@ -1,8 +1,7 @@
 //! Event bus + SSE + WebSocket + webhook fan-out.
 //!
-//! Producers (UDP ingest, sensor poll task) publish via
-//! [`EventBus::publish_sensing`] / [`EventBus::publish_raw`]. Consumers
-//! subscribe via:
+//! The bus carries [`SensingEvent`]s produced by [`acorn_sensors::Reflex`]
+//! over each ESP32 feature packet. Consumers subscribe via:
 //!
 //! * `GET  /api/v1/events`      — Server-Sent Events stream
 //! * `GET  /api/v1/ws`          — WebSocket upgrade
@@ -15,11 +14,10 @@
 use std::{convert::Infallible, sync::Arc, time::Duration};
 
 use acorn_proto::event::SensingEvent;
-use acorn_sensors::SensorReading;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, State,
+        Path, Query, State,
     },
     http::{HeaderMap, StatusCode},
     response::{
@@ -38,12 +36,12 @@ use crate::{require_bearer, ApiError, AppState};
 
 const BUS_CAPACITY: usize = 256;
 
-/// In-process event bus: two broadcast channels (semantic vs raw) plus a
-/// registry of outbound webhook URLs. The fan-out task ([`spawn_webhook_fanout`])
-/// subscribes to `sensing` and POSTs each event to every registered URL.
+/// In-process event bus: a broadcast channel for [`SensingEvent`]s plus a
+/// registry of outbound webhook URLs. The fan-out task
+/// ([`spawn_webhook_fanout`]) subscribes and POSTs each event to every
+/// registered URL.
 pub struct EventBus {
     pub sensing: broadcast::Sender<SensingEvent>,
-    pub raw: broadcast::Sender<RawReadingEvent>,
     pub webhooks: RwLock<Vec<Webhook>>,
 }
 
@@ -51,7 +49,6 @@ impl EventBus {
     pub fn new() -> Self {
         Self {
             sensing: broadcast::channel(BUS_CAPACITY).0,
-            raw: broadcast::channel(BUS_CAPACITY).0,
             webhooks: RwLock::new(Vec::new()),
         }
     }
@@ -59,52 +56,11 @@ impl EventBus {
     pub fn publish_sensing(&self, ev: SensingEvent) {
         let _ = self.sensing.send(ev);
     }
-
-    pub fn publish_raw(&self, ev: RawReadingEvent) {
-        let _ = self.raw.send(ev);
-    }
 }
 
 impl Default for EventBus {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// One [`SensorReading`] tagged with the producer's identifier (e.g.
-/// `"reed@gpio5"`) and a server-side timestamp.
-#[derive(Debug, Clone, Serialize)]
-pub struct RawReadingEvent {
-    pub source: String,
-    pub ts_us: i64,
-    pub reading: SerializableReading,
-}
-
-/// JSON-friendly mirror of [`SensorReading`] (the upstream enum doesn't
-/// derive Serialize and we don't want to leak `parking_lot`/etc.).
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SerializableReading {
-    Digital { high: bool },
-    Adc { channels: [i16; 4] },
-    Climate { temp_c: f32, humidity_pct: f32, pressure_hpa: f32 },
-}
-
-impl From<SensorReading> for SerializableReading {
-    fn from(r: SensorReading) -> Self {
-        match r {
-            SensorReading::Digital { high } => SerializableReading::Digital { high },
-            SensorReading::Adc { channels } => SerializableReading::Adc { channels },
-            SensorReading::Climate {
-                temp_c,
-                humidity_pct,
-                pressure_hpa,
-            } => SerializableReading::Climate {
-                temp_c,
-                humidity_pct,
-                pressure_hpa,
-            },
-        }
     }
 }
 
@@ -123,11 +79,19 @@ pub struct WebhookCreate {
 // Handlers
 // ---------------------------------------------------------------------------
 
+#[derive(Deserialize)]
+pub struct TokenQuery {
+    #[serde(default)]
+    token: Option<String>,
+}
+
 pub async fn handle_events_sse(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(q): Query<TokenQuery>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ApiError> {
-    require_bearer(&headers, &state.auth)?;
+    // EventSource can't set custom headers, so accept ?token=... too.
+    crate::require_bearer_with_query(&headers, q.token.as_deref(), &state.auth)?;
     let rx = state.event_bus.sensing.subscribe();
     let stream = BroadcastStream::new(rx).filter_map(|res| async move {
         match res {

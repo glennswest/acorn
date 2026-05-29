@@ -2,12 +2,13 @@
 //!
 //! Wiring:
 //!   UDP :5006 (feature packets) -> store + witness + reflex + bus + nodes
-//!   HTTP :8443 (RuView surface) -> acorn-api (REST + SSE + WS + MCP)
-//!   Sensor poll task            -> bus.raw  (every --sensor-poll-ms)
+//!   HTTP :8443 (RuView surface) -> acorn-api (REST + SSE + WS + MCP + UI)
 //!   Webhook fan-out task        -> POSTs sensing events to registered URLs
 //!
-//! TLS is intentionally out of scope for the initial daemon; terminate TLS
-//! in front (caddy/nginx/traefik) or add a rustls listener here later.
+//! There is intentionally no local sensor pipeline: sensors are distributed
+//! ESP32 nodes that push feature packets to the UDP port. TLS is out of
+//! scope for the daemon itself — terminate TLS in front (caddy/nginx) or
+//! add a rustls listener here later.
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::SystemTime};
 
@@ -20,7 +21,6 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 mod ingest;
-mod sensor_task;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "Wire-compatible Cognitum Seed daemon")]
@@ -49,40 +49,6 @@ struct Args {
     #[arg(long, env = "ACORND_METRIC", default_value = "cosine", value_parser = parse_metric)]
     metric: Metric,
 
-    // --- Sensor pipeline -----------------------------------------------------
-    /// Sensor poll interval in milliseconds.
-    #[arg(long, env = "ACORND_SENSOR_POLL_MS", default_value_t = 1000)]
-    sensor_poll_ms: u64,
-
-    /// BCM GPIO pin for the reed (door) switch.
-    #[arg(long, env = "ACORND_REED_PIN", default_value_t = 5)]
-    reed_pin: u8,
-
-    /// BCM GPIO pin for the PIR motion sensor.
-    #[arg(long, env = "ACORND_PIR_PIN", default_value_t = 6)]
-    pir_pin: u8,
-
-    /// BCM GPIO pin for the vibration sensor.
-    #[arg(long, env = "ACORND_VIBRATION_PIN", default_value_t = 13)]
-    vibration_pin: u8,
-
-    /// I2C bus device path on the Pi (typically `/dev/i2c-1`).
-    #[arg(long, env = "ACORND_I2C_BUS", default_value = "/dev/i2c-1")]
-    i2c_bus: PathBuf,
-
-    /// I2C slave address of the ADS1115 (default 0x48; reassignable via ADDR pin).
-    #[arg(long, env = "ACORND_ADS1115_ADDR", default_value_t = 0x48, value_parser = parse_hex_u8)]
-    ads1115_addr: u8,
-
-    /// I2C slave address of the BME280 (default 0x76; 0x77 if SDO is pulled high).
-    #[arg(long, env = "ACORND_BME280_ADDR", default_value_t = 0x76, value_parser = parse_hex_u8)]
-    bme280_addr: u8,
-
-    /// Disable the sensor poll task entirely.
-    #[arg(long, env = "ACORND_SENSORS_OFF", default_value_t = false)]
-    sensors_off: bool,
-
-    // --- Reflex thresholds ---------------------------------------------------
     /// Presence-detection threshold (0..1) for the CSI feature vector.
     #[arg(long, env = "ACORND_PRESENCE_THRESHOLD", default_value_t = 0.5)]
     presence_threshold: f32,
@@ -99,16 +65,6 @@ fn parse_metric(s: &str) -> Result<Metric, String> {
         "dot" => Ok(Metric::Dot),
         other => Err(format!("unknown metric: {other} (want cosine|l2|dot)")),
     }
-}
-
-fn parse_hex_u8(s: &str) -> Result<u8, String> {
-    let s = s.trim();
-    let (radix, body) = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        (16, rest)
-    } else {
-        (10, s)
-    };
-    u8::from_str_radix(body, radix).map_err(|e| format!("invalid u8 {s:?}: {e}"))
 }
 
 #[tokio::main]
@@ -181,18 +137,6 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     let _webhook_handle = spawn_webhook_fanout(event_bus.clone());
-
-    if !args.sensors_off {
-        let sensor_args = args.clone();
-        let bus = event_bus.clone();
-        tokio::spawn(async move {
-            if let Err(e) = sensor_task::run(sensor_args, bus).await {
-                tracing::warn!(?e, "sensor task exited");
-            }
-        });
-    } else {
-        tracing::info!("sensor poll disabled (--sensors-off)");
-    }
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {

@@ -97,5 +97,44 @@
   {occupied:false}` arrives on the SSE stream `data:` line.
 - Webhook add/list returns assigned id and the registered URL.
 
+## [v0.4.0] — 2026-05-21
+
+### Breaking
+- **Local Pi sensor pipeline removed.** Acorn's deployment model is one
+  aggregator daemon receiving feature packets over UDP from a fleet of
+  distributed ESP32 sensor nodes — the Pi itself has no sensors.
+  Auto-binding mock sensors on every boot was noise, not behaviour.
+  - Deleted: `acorn-sensors::{Sensor, SensorKind, SensorReading,
+    SensorError, MockDigital, MockAdc, MockClimate, pi::*}`.
+  - Deleted: `acorn-sensors`'s `pi-hw` feature; `acornd`'s `pi-hw` feature.
+  - Deleted from workspace: `rppal`, `ads1x1x`, `bme280`,
+    `linux-embedded-hal`, `nb`.
+  - Deleted from `acornd`: `sensor_task` module; CLI flags
+    `--reed-pin`, `--pir-pin`, `--vibration-pin`, `--i2c-bus`,
+    `--ads1115-addr`, `--bme280-addr`, `--sensor-poll-ms`,
+    `--sensors-off` (and `ACORND_*` env equivalents).
+  - Deleted from `acorn-api`: `EventBus.raw` channel, `RawReadingEvent`,
+    `SerializableReading`.
+  - Removed `SupplementaryGroups=gpio i2c` from the systemd unit and the
+    matching adduser hook from the deb postinst.
+- **Smaller deb / binary.** Stripping the Pi-driver deps cuts ~2 MB of
+  compiled code.
+
+### Added
+- **Embedded fleet UI at `GET /`.** Single-page vanilla-JS app, no build
+  step, no npm. Renders the live ESP32 fleet (autopolls `/api/v1/nodes`
+  every 2 s), the cognitive headline (fragility / coherence / vector
+  count from `/api/v1/cognitive/snapshot`), and a live event log
+  subscribing to `/api/v1/events`. Token cached in localStorage with a
+  pair-or-paste prompt on first load.
+- **EventSource-friendly auth on `/api/v1/events`.** Now accepts either
+  `Authorization: Bearer <token>` or `?token=...`, since browser
+  `EventSource` can't set custom headers.
+
+### Kept
+- `Reflex` + `ReflexConfig` + `--presence-threshold` /
+  `--motion-threshold` — the right abstraction over the incoming
+  FeatureVector stream, no hardware required.
+
 ## [Unreleased]
 <!-- New unreleased changes go here -->

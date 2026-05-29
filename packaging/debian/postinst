@@ -10,13 +10,6 @@ case "$1" in
                     --gecos "Acorn daemon" acorn
         fi
 
-        # Add to gpio / i2c groups when present (Pi setups).
-        for g in gpio i2c; do
-            if getent group "$g" >/dev/null; then
-                adduser acorn "$g" >/dev/null 2>&1 || true
-            fi
-        done
-
         # Make sure /var/lib/acorn exists and is owned by acorn (StateDirectory
         # handles this when the service starts, but creating it here lets
         # admins drop config in before first start).

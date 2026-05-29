@@ -20,7 +20,7 @@ Companion spec: `cognitum-seed-rust-scoping.md` (external).
 | `acorn-client` | implemented | Typed async reqwest client over the Acorn HTTP surface. **Z Man imports this + `acorn-proto`** and nothing else. |
 | `acorn-store` | implemented | RVF append-only store, brute-force kNN over cosine/L2/dot. |
 | `acorn-witness` | implemented | SHA-256 hash-linked witness chain + Ed25519 device custody. |
-| `acorn-sensors` | implemented | Sensor trait + mocks + Reflex rules. Pi-hardware drivers gated behind `pi-hw` feature (rppal/ads1x1x/bme280 wiring TODO). |
+| `acorn-sensors` | implemented | Reflex rules over the FeatureVector stream. No hardware drivers — sensors are distributed ESP32 nodes pushing UDP packets, not local to the daemon. |
 | `acorn-cognitive` | implemented | Stoer-Wagner min-cut fragility + temporal coherence. |
 | `acorn-api` | implemented | Axum HTTP server — pair/store/witness/custody/cognitive/mcp/swarm endpoints (12 routes; 98-endpoint full surface follows the same pattern). |
 | `acorn-mcp` | implemented | JSON-RPC 2.0 dispatcher + tool registry. Ships ~9 representative `seed.*` tools spanning all 4 namespaces; adding more is mechanical. |
@@ -81,11 +81,17 @@ Out of scope for the daemon itself in this release — terminate TLS in front
 (caddy / nginx / traefik) on the same host. A built-in `rustls` listener is a
 clean follow-up.
 
-## Sensor hardware
+## Deployment model
 
-Real Pi drivers are gated behind the `pi-hw` cargo feature on `acorn-sensors`
-and require an actual Pi to validate. The default build is host-portable and
-uses deterministic mocks (`MockDigital`, `MockAdc`, `MockClimate`).
+One aggregator daemon (typically a Pi CM5) receives feature packets over UDP
+from a fleet of distributed ESP32 sensor nodes. The daemon has no local
+sensors. Per-node observability is automatic — every fresh `node_id` that
+sends a packet is auto-registered with last-seen, packet count, and
+sequence-gap detection at `/api/v1/nodes`.
+
+A built-in fleet UI is served at `GET /` — vanilla HTML+JS, no build step.
+Shows the live node table, cognitive headline (fragility / coherence), and a
+streaming event log subscribed to `/api/v1/events`.
 
 ## Caveats
 

@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>acorn — fleet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --text: #c9d1d9;
+  --muted: #768390;
+  --accent: #58a6ff;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --border: #30363d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+body { margin: 0; background: var(--bg); color: var(--text); }
+header {
+  padding: .8rem 1rem; background: var(--panel); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+}
+header h1 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--accent); }
+header .info { font-size: .82rem; color: var(--muted); }
+header .info b { color: var(--text); font-weight: 600; }
+main { padding: 1rem; display: grid; gap: 1rem;
+       grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+section { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+section h2 { margin: 0; padding: .55rem .8rem; font-size: .8rem; font-weight: 600;
+             color: var(--muted); border-bottom: 1px solid var(--border);
+             text-transform: uppercase; letter-spacing: .04em; }
+table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+th, td { text-align: left; padding: .4rem .8rem;
+         border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: .72rem;
+     text-transform: uppercase; letter-spacing: .04em; }
+tr:last-child td { border-bottom: none; }
+.fv { font-size: .72rem; color: var(--muted); }
+.empty { padding: 1.2rem; color: var(--muted); text-align: center; font-size: .85rem; }
+#events { max-height: 60vh; overflow: auto; }
+#events .e { padding: .35rem .8rem; border-bottom: 1px solid var(--border);
+             font-size: .78rem; display: flex; gap: .6rem; }
+#events .e:last-child { border-bottom: none; }
+#events .t { color: var(--muted); flex-shrink: 0; }
+#events .k { color: var(--accent); flex-shrink: 0; min-width: 7em; }
+#events .z { color: var(--text); }
+#events .e.fall .k { color: var(--bad); }
+#events .e.motion .k { color: var(--warn); }
+#events .e.occupancy .k { color: var(--ok); }
+#cognitive { display: flex; gap: 1.5rem; padding: .8rem; font-size: .85rem; }
+#cognitive .stat { display: flex; flex-direction: column; }
+#cognitive .label { font-size: .7rem; color: var(--muted);
+                    text-transform: uppercase; letter-spacing: .04em; }
+#cognitive .value { font-size: 1.4rem; font-weight: 600; color: var(--accent); }
+#auth { padding: 1rem; }
+#auth p { margin: 0 0 .8rem 0; font-size: .85rem; }
+#auth input { width: 100%; padding: .4rem .6rem; background: #0d1117;
+              color: var(--text); border: 1px solid var(--border);
+              border-radius: 4px; font-family: inherit; font-size: .85rem; }
+#auth button { margin-top: .6rem; padding: .4rem .8rem; background: var(--accent);
+               color: #0d1117; border: 0; border-radius: 4px; cursor: pointer;
+               font-family: inherit; font-size: .85rem; }
+#auth button.secondary { background: transparent; color: var(--accent);
+                         border: 1px solid var(--accent); }
+.err { color: var(--bad); font-size: .8rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>acorn</h1>
+  <div class="info">
+    device <b id="device-id">…</b>
+    · v<b id="version">…</b>
+    · nodes <b id="node-count">0</b>
+    · store <b id="store-count">0</b>
+    · witness <b id="witness-count">0</b>
+    · uptime <b id="uptime">…</b>
+  </div>
+  <span style="flex:1"></span>
+  <button id="logout" class="secondary" style="display:none;padding:.3rem .6rem;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:inherit;font-size:.75rem">forget token</button>
+</header>
+
+<main id="app" style="display:none">
+  <section>
+    <h2>Fleet — ESP32 nodes</h2>
+    <div id="nodes-wrap"><div class="empty">no nodes seen yet</div></div>
+  </section>
+  <section>
+    <h2>Cognitive</h2>
+    <div id="cognitive">
+      <div class="stat"><span class="label">fragility</span><span class="value" id="fragility">—</span></div>
+      <div class="stat"><span class="label">coherence</span><span class="value" id="coherence">—</span></div>
+      <div class="stat"><span class="label">vectors</span><span class="value" id="vector-count">—</span></div>
+    </div>
+    <h2 style="border-top:1px solid var(--border)">Sensing events</h2>
+    <div id="events"><div class="empty">listening…</div></div>
+  </section>
+</main>
+
+<section id="auth" style="display:none;max-width:520px;margin:3rem auto">
+  <h2 style="border:0">Authenticate</h2>
+  <p>Acorn needs a bearer token. Either pair now (works if pairing window is open) or paste an existing token.</p>
+  <div id="pair-row">
+    <button id="pair-btn">pair as &quot;acorn-ui&quot;</button>
+    <div id="pair-err" class="err"></div>
+  </div>
+  <p style="margin-top:1.4rem">…or paste a token:</p>
+  <input id="token-input" type="text" placeholder="64-hex-char token" autocomplete="off">
+  <button id="token-btn">use token</button>
+</section>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const TOKEN_KEY = "acorn_token";
+let token = localStorage.getItem(TOKEN_KEY) || "";
+let es = null;
+let pollHandle = null;
+
+function authed() { return !!token; }
+function authHdr() { return { "authorization": "Bearer " + token }; }
+
+function show(view) {
+  $("#auth").style.display = (view === "auth") ? "block" : "none";
+  $("#app").style.display = (view === "app") ? "grid" : "none";
+  $("#logout").style.display = (view === "app") ? "inline-block" : "none";
+}
+
+async function pair() {
+  $("#pair-err").textContent = "";
+  try {
+    const r = await fetch("/api/v1/pair", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client_name: "acorn-ui" }),
+    });
+    if (!r.ok) {
+      const body = await r.text();
+      throw new Error(r.status + ": " + body);
+    }
+    const j = await r.json();
+    setToken(j.token);
+  } catch (e) {
+    $("#pair-err").textContent = "pair failed — " + e.message + " (paste an existing token below if pairing is closed)";
+  }
+}
+
+function setToken(t) {
+  token = t;
+  localStorage.setItem(TOKEN_KEY, t);
+  start();
+}
+
+function logout() {
+  if (es) { es.close(); es = null; }
+  if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+  token = "";
+  localStorage.removeItem(TOKEN_KEY);
+  show("auth");
+}
+
+async function getJSON(path) {
+  const r = await fetch(path, { headers: authHdr() });
+  if (r.status === 401 || r.status === 412) { logout(); throw new Error("unauthorized"); }
+  if (!r.ok) throw new Error(r.status + " " + r.statusText);
+  return r.json();
+}
+
+function fmtTs(us) {
+  if (!us) return "—";
+  const d = new Date(us / 1000);
+  return d.toLocaleTimeString();
+}
+
+function fmtSecs(s) {
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s/60) + "m";
+  if (s < 86400) return Math.floor(s/3600) + "h";
+  return Math.floor(s/86400) + "d";
+}
+
+function fmtFv(v) {
+  if (!v) return "";
+  return "[" + v.map(x => x.toFixed(2)).join(", ") + "]";
+}
+
+async function pollOnce() {
+  try {
+    const [health, nodes, snap] = await Promise.all([
+      getJSON("/api/v1/system/health"),
+      getJSON("/api/v1/nodes"),
+      getJSON("/api/v1/cognitive/snapshot"),
+    ]);
+    $("#device-id").textContent = health.device_id;
+    $("#version").textContent = health.version;
+    $("#store-count").textContent = health.store_count;
+    $("#witness-count").textContent = health.witness_count;
+    $("#uptime").textContent = fmtSecs(health.uptime_secs);
+    $("#node-count").textContent = nodes.length;
+    $("#fragility").textContent = snap.fragility.toFixed(3);
+    $("#coherence").textContent = snap.coherence.toFixed(3);
+    $("#vector-count").textContent = snap.vector_count;
+    renderNodes(nodes);
+  } catch (e) {
+    // logout already handled 401/412; otherwise log silently
+    console.warn("poll failed", e);
+  }
+}
+
+function renderNodes(nodes) {
+  const wrap = $("#nodes-wrap");
+  if (!nodes.length) {
+    wrap.innerHTML = '<div class="empty">no nodes seen yet — point an ESP32 at UDP :5006</div>';
+    return;
+  }
+  nodes.sort((a, b) => a.node_id - b.node_id);
+  let html = "<table><thead><tr><th>node_id</th><th>last_seen</th><th>packets</th><th>last_seq</th><th>gaps</th><th>last feature vector</th></tr></thead><tbody>";
+  for (const n of nodes) {
+    html += "<tr>";
+    html += "<td>" + n.node_id + "</td>";
+    html += "<td>" + fmtTs(n.last_seen_us) + "</td>";
+    html += "<td>" + n.packet_count + "</td>";
+    html += "<td>" + n.last_seq + "</td>";
+    html += "<td>" + (n.gaps > 0 ? '<span style="color:var(--bad)">' + n.gaps + '</span>' : n.gaps) + "</td>";
+    html += '<td class="fv">' + fmtFv(n.last_features) + "</td>";
+    html += "</tr>";
+  }
+  html += "</tbody></table>";
+  wrap.innerHTML = html;
+}
+
+function startEvents() {
+  if (es) es.close();
+  // EventSource doesn't allow setting custom headers, so pass the token in
+  // the query string. acorn-api accepts either Bearer header OR ?token=.
+  // (See the SSE handler.) Fallback to a fetch+ReadableStream if needed.
+  const url = "/api/v1/events?token=" + encodeURIComponent(token);
+  es = new EventSource(url);
+  es.onmessage = (msg) => {
+    try { appendEvent(JSON.parse(msg.data)); }
+    catch (e) { /* ignore */ }
+  };
+  es.onerror = () => { /* auto-reconnect */ };
+}
+
+function appendEvent(ev) {
+  const log = $("#events");
+  if (log.querySelector(".empty")) log.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = "e " + (ev.kind || "");
+  const z = ev.zone || "";
+  let detail = "";
+  if (ev.kind === "occupancy") detail = (ev.occupied ? "→ occupied" : "→ vacant") + " (" + ev.confidence.toFixed(2) + ")";
+  else if (ev.kind === "motion") detail = "energy " + ev.energy.toFixed(2);
+  else if (ev.kind === "vitals") detail = "hr " + ev.heart_rate_bpm.toFixed(0) + " rr " + ev.breathing_bpm.toFixed(0);
+  else if (ev.kind === "regime_change") detail = "fragility " + ev.fragility.toFixed(2);
+  div.innerHTML = '<span class="t">' + new Date().toLocaleTimeString() + '</span>'
+                + '<span class="k">' + (ev.kind || "?") + '</span>'
+                + '<span class="z">' + z + ' ' + detail + '</span>';
+  log.prepend(div);
+  // cap to 200 entries
+  while (log.children.length > 200) log.removeChild(log.lastChild);
+}
+
+function start() {
+  show("app");
+  pollOnce();
+  pollHandle = setInterval(pollOnce, 2000);
+  startEvents();
+}
+
+document.getElementById("pair-btn").addEventListener("click", pair);
+document.getElementById("token-btn").addEventListener("click", () => {
+  const v = $("#token-input").value.trim();
+  if (v) setToken(v);
+});
+document.getElementById("logout").addEventListener("click", logout);
+
+if (authed()) start(); else show("auth");
+</script>
+</body>
+</html>

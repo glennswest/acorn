@@ -15,10 +15,6 @@ ExecStart=/usr/bin/acornd
 Restart=on-failure
 RestartSec=5
 
-# Pi GPIO / I2C access — these groups exist on Raspberry Pi OS / Debian
-# trixie on a Pi. Harmless if a group doesn't exist (systemd skips it).
-SupplementaryGroups=gpio i2c
-
 # Hardening
 ProtectSystem=strict
 ReadWritePaths=/var/lib/acorn

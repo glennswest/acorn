@@ -5,12 +5,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[features]
-default = []
-# Forward to the acorn-sensors feature that pulls in the rppal/ads1x1x/bme280
-# drivers. Build with `cargo build -p acornd --features pi-hw` on the Pi.
-pi-hw = ["acorn-sensors/pi-hw"]
-
 [dependencies]
 acorn-proto   = { workspace = true }
 acorn-store   = { workspace = true }
@@ -34,8 +28,9 @@ acornd is a wire-compatible Rust reimplementation of the Cognitum Seed
 edge-intelligence appliance. It speaks the RuView protocol (UDP feature
 packets on :5006, HTTPS /api/v1/* on :8443), exposes an MCP JSON-RPC tool
 surface, fans events out over SSE / WebSocket / outbound webhooks, runs
-the local Pi GPIO + I2C sensor pipeline through a Reflex state machine,
-and tracks per-ESP32-node fleet observability."""
+a Reflex state machine over the incoming ESP32 feature-vector stream,
+tracks per-node fleet observability, and serves a vanilla-JS fleet UI
+at /."""
 section = "net"
 priority = "optional"
 depends = "$auto, adduser, systemd"

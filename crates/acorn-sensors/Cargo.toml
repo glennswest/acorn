@@ -1,26 +1,10 @@
 [package]
 name = "acorn-sensors"
-description = "Raspberry Pi GPIO/I2C sensor drivers (reed, PIR, vibration, ADS1115, BME280) + reflex rules."
+description = "Reflex rules over the FeatureVector stream that arrives via UDP from the ESP32 fleet."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[features]
-default = []
-# Build the rppal/ads1x1x/bme280 backed implementations. Constructors compile
-# on any host but only return real driver handles when targeting linux on a
-# Pi; on other targets they return `HardwareUnavailable`.
-pi-hw = ["dep:rppal", "dep:ads1x1x", "dep:bme280", "dep:linux-embedded-hal", "dep:nb"]
-
 [dependencies]
 acorn-proto = { workspace = true }
-async-trait = "0.1"
-thiserror   = { workspace = true }
 parking_lot = { workspace = true }
-tokio       = { workspace = true }
-
-rppal              = { workspace = true, optional = true }
-ads1x1x            = { workspace = true, optional = true }
-bme280             = { workspace = true, optional = true }
-linux-embedded-hal = { workspace = true, optional = true }
-nb                 = { workspace = true, optional = true }

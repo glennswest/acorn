@@ -24,8 +24,9 @@
 
 pub mod events;
 pub mod fleet;
+pub mod ui;
 
-pub use events::{EventBus, RawReadingEvent, SerializableReading, Webhook};
+pub use events::{EventBus, Webhook};
 pub use fleet::{NodeRegistry, NodeState};
 
 use std::{
@@ -238,12 +239,46 @@ fn require_bearer(headers: &HeaderMap, auth: &AuthState) -> Result<(), ApiError>
     }
 }
 
+/// Like [`require_bearer`] but also accepts a `?token=` query parameter,
+/// for clients (EventSource) that can't set custom headers.
+pub(crate) fn require_bearer_with_query(
+    headers: &HeaderMap,
+    query_token: Option<&str>,
+    auth: &AuthState,
+) -> Result<(), ApiError> {
+    let expected = auth.token_hash().ok_or(ApiError::NotPaired)?;
+    let token: &str = if let Some(raw) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+    {
+        raw.trim()
+    } else if let Some(t) = query_token {
+        t.trim()
+    } else {
+        return Err(ApiError::Unauthorized);
+    };
+    let mut h = Sha256::new();
+    h.update(token.as_bytes());
+    let got: [u8; 32] = h.finalize().into();
+    let mut diff = 0u8;
+    for i in 0..32 {
+        diff |= got[i] ^ expected[i];
+    }
+    if diff == 0 {
+        Ok(())
+    } else {
+        Err(ApiError::Unauthorized)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Router builder
 // ---------------------------------------------------------------------------
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(ui::handle_index))
         .route("/api/v1/pair", post(handle_pair))
         .route("/api/v1/pair/window", post(handle_pair_window))
         .route("/api/v1/store/ingest", post(handle_ingest))
