@@ -10,7 +10,7 @@ default = []
 # Build the rppal/ads1x1x/bme280 backed implementations. Constructors compile
 # on any host but only return real driver handles when targeting linux on a
 # Pi; on other targets they return `HardwareUnavailable`.
-pi-hw = ["dep:rppal", "dep:ads1x1x", "dep:bme280", "dep:linux-embedded-hal"]
+pi-hw = ["dep:rppal", "dep:ads1x1x", "dep:bme280", "dep:linux-embedded-hal", "dep:nb"]
 
 [dependencies]
 acorn-proto = { workspace = true }
@@ -23,3 +23,4 @@ rppal              = { workspace = true, optional = true }
 ads1x1x            = { workspace = true, optional = true }
 bme280             = { workspace = true, optional = true }
 linux-embedded-hal = { workspace = true, optional = true }
+nb                 = { workspace = true, optional = true }

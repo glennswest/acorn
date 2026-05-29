@@ -1,0 +1,37 @@
+[Unit]
+Description=Acorn edge-intelligence daemon (wire-compatible Cognitum Seed)
+Documentation=https://github.com/glennswest/acorn
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=acorn
+Group=acorn
+EnvironmentFile=-/etc/default/acornd
+StateDirectory=acorn
+WorkingDirectory=/var/lib/acorn
+ExecStart=/usr/bin/acornd
+Restart=on-failure
+RestartSec=5
+
+# Pi GPIO / I2C access — these groups exist on Raspberry Pi OS / Debian
+# trixie on a Pi. Harmless if a group doesn't exist (systemd skips it).
+SupplementaryGroups=gpio i2c
+
+# Hardening
+ProtectSystem=strict
+ReadWritePaths=/var/lib/acorn
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

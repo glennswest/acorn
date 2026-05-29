@@ -1,0 +1,50 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Create the acorn system user/group if not already present.
+        if ! getent passwd acorn >/dev/null; then
+            adduser --system --group --no-create-home \
+                    --home /var/lib/acorn --shell /usr/sbin/nologin \
+                    --gecos "Acorn daemon" acorn
+        fi
+
+        # Add to gpio / i2c groups when present (Pi setups).
+        for g in gpio i2c; do
+            if getent group "$g" >/dev/null; then
+                adduser acorn "$g" >/dev/null 2>&1 || true
+            fi
+        done
+
+        # Make sure /var/lib/acorn exists and is owned by acorn (StateDirectory
+        # handles this when the service starts, but creating it here lets
+        # admins drop config in before first start).
+        if [ ! -d /var/lib/acorn ]; then
+            install -d -o acorn -g acorn -m 0750 /var/lib/acorn
+        fi
+
+        # Enable + (re)start the service via deb-systemd-helper when available.
+        if [ -x /usr/bin/deb-systemd-helper ]; then
+            deb-systemd-helper unmask acornd.service >/dev/null || true
+            if deb-systemd-helper --quiet was-enabled acornd.service; then
+                deb-systemd-helper enable acornd.service >/dev/null || true
+            else
+                deb-systemd-helper update-state acornd.service >/dev/null || true
+                deb-systemd-helper enable acornd.service >/dev/null || true
+            fi
+        fi
+        if [ -d /run/systemd/system ]; then
+            systemctl --system daemon-reload >/dev/null || true
+            if [ -n "$2" ]; then
+                # Upgrade — restart the service.
+                deb-systemd-invoke restart acornd.service >/dev/null || true
+            else
+                deb-systemd-invoke start acornd.service >/dev/null || true
+            fi
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+exit 0

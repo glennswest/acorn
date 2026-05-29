@@ -219,12 +219,21 @@ pub mod pi {
 
     #[cfg(all(feature = "pi-hw", target_os = "linux"))]
     fn ads1115(addr: u8) -> Result<Box<dyn Sensor>, SensorError> {
-        use ads1x1x::{channel, Ads1x1x, FullScaleRange, TargetAddr};
+        use ads1x1x::{Ads1x1x, FullScaleRange, TargetAddr};
         use linux_embedded_hal::I2cdev;
         let dev = I2cdev::new("/dev/i2c-1")
             .map_err(|e| SensorError::Driver(format!("i2c open: {e}")))?;
-        let target = TargetAddr::new(addr)
-            .map_err(|e| SensorError::Driver(format!("ads addr: {e:?}")))?;
+        let target = match addr {
+            0x48 => TargetAddr::Gnd,
+            0x49 => TargetAddr::Vdd,
+            0x4A => TargetAddr::Sda,
+            0x4B => TargetAddr::Scl,
+            _ => {
+                return Err(SensorError::Driver(format!(
+                    "unsupported ads1115 addr 0x{addr:02x}; pick 0x48..0x4B"
+                )))
+            }
+        };
         let mut adc = Ads1x1x::new_ads1115(dev, target);
         adc.set_full_scale_range(FullScaleRange::Within4_096V)
             .map_err(|e| SensorError::Driver(format!("ads fsr: {e:?}")))?;
@@ -248,14 +257,14 @@ pub mod pi {
             SensorKind::Adc
         }
         async fn poll(&mut self) -> Result<SensorReading, SensorError> {
-            use ads1x1x::channel::*;
-            let a = nb::block!(self.adc.read(SingleA0))
+            use ads1x1x::channel::{SingleA0, SingleA1, SingleA2, SingleA3};
+            let a = ::nb::block!(self.adc.read(SingleA0))
                 .map_err(|e| SensorError::Driver(format!("ads a0: {e:?}")))?;
-            let b = nb::block!(self.adc.read(SingleA1))
+            let b = ::nb::block!(self.adc.read(SingleA1))
                 .map_err(|e| SensorError::Driver(format!("ads a1: {e:?}")))?;
-            let c = nb::block!(self.adc.read(SingleA2))
+            let c = ::nb::block!(self.adc.read(SingleA2))
                 .map_err(|e| SensorError::Driver(format!("ads a2: {e:?}")))?;
-            let d = nb::block!(self.adc.read(SingleA3))
+            let d = ::nb::block!(self.adc.read(SingleA3))
                 .map_err(|e| SensorError::Driver(format!("ads a3: {e:?}")))?;
             Ok(SensorReading::Adc {
                 channels: [a, b, c, d],
@@ -269,7 +278,15 @@ pub mod pi {
         use linux_embedded_hal::{Delay, I2cdev};
         let dev = I2cdev::new("/dev/i2c-1")
             .map_err(|e| SensorError::Driver(format!("i2c open: {e}")))?;
-        let mut driver = BME280::new(dev, addr);
+        let mut driver = match addr {
+            0x76 => BME280::new_primary(dev),
+            0x77 => BME280::new_secondary(dev),
+            _ => {
+                return Err(SensorError::Driver(format!(
+                    "unsupported bme280 addr 0x{addr:02x}; pick 0x76 or 0x77"
+                )))
+            }
+        };
         driver
             .init(&mut Delay)
             .map_err(|e| SensorError::Driver(format!("bme280 init: {e:?}")))?;

@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    purge)
+        if [ -x /usr/bin/deb-systemd-helper ]; then
+            deb-systemd-helper purge acornd.service >/dev/null || true
+            deb-systemd-helper unmask acornd.service >/dev/null || true
+        fi
+        # Purge state on explicit purge only — preserve on simple remove.
+        rm -rf /var/lib/acorn
+        ;;
+    remove)
+        if [ -x /usr/bin/deb-systemd-helper ]; then
+            deb-systemd-helper mask acornd.service >/dev/null || true
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+exit 0

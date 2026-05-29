@@ -25,3 +25,27 @@ tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow             = { workspace = true }
 sha2               = { workspace = true }
+
+[package.metadata.deb]
+maintainer = "Glenn West <glennswest@neuralcloudcomputing.com>"
+copyright = "2026, Glenn West <glennswest@neuralcloudcomputing.com>"
+extended-description = """
+acornd is a wire-compatible Rust reimplementation of the Cognitum Seed
+edge-intelligence appliance. It speaks the RuView protocol (UDP feature
+packets on :5006, HTTPS /api/v1/* on :8443), exposes an MCP JSON-RPC tool
+surface, fans events out over SSE / WebSocket / outbound webhooks, runs
+the local Pi GPIO + I2C sensor pipeline through a Reflex state machine,
+and tracks per-ESP32-node fleet observability."""
+section = "net"
+priority = "optional"
+depends = "$auto, adduser, systemd"
+assets = [
+    ["../../target/aarch64-unknown-linux-gnu/release/acornd", "usr/bin/", "755"],
+    ["../../packaging/acornd.service", "lib/systemd/system/", "644"],
+    ["../../packaging/acornd.env", "etc/default/acornd", "644"],
+    ["../../README.md", "usr/share/doc/acornd/README.md", "644"],
+    ["../../CHANGELOG.md", "usr/share/doc/acornd/CHANGELOG.md", "644"],
+]
+maintainer-scripts = "../../packaging/debian"
+conf-files = ["/etc/default/acornd"]
+systemd-units = { enable = true, start = true, restart-after-upgrade = true }
